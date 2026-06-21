@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate, max-age=0" />
+    <meta http-equiv="Pragma" content="no-cache" />
+    <meta http-equiv="Expires" content="0" />
+    <meta name="theme-color" content="#2196F3" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="ComfoAir" />
+    <title>MQTT Einstellungen</title>
+    <link rel="icon" type="image/png" href="Zehnder.png">
+    <link rel="apple-touch-icon" href="Zehnder.png">
+    <link rel="manifest" href="manifest.json">
+    <link rel="stylesheet" type="text/css" href="WifiManager.css">
+</head>
+<body>
+    <div class="app">
+        <div class="header">
+            <div class="title"><h1>MQTT Einstellungen</h1></div>
+            <div class="actions"><a class="gear" href="/settings" title="Einstellungen">⚙️</a></div>
+        </div>
+
+        <div class="card">
+            <section class="sec">
+                <h2>MQTT</h2>
+                <form id="frm-mqtt" style="display:grid; gap:.5rem">
+                    <div class="row">
+                        <label>MQTT aktiv</label>
+                        <input id="mq-enabled" type="checkbox" checked>
+                    </div>
+                    <div class="row">
+                        <label>Host</label><input id="mq-host" class="input" type="text" placeholder="192.168.1.10">
+                    </div>
+                    <div class="row">
+                        <label>Port</label><input id="mq-port" class="input" type="number" min="1" max="65535" value="1883">
+                    </div>
+                    <div class="row">
+                        <label>Benutzer</label><input id="mq-user" class="input" type="text">
+                    </div>
+                    <div class="row">
+                        <label>Passwort</label>
+                        <div style="display:flex; gap:.4rem; align-items:center; flex:1;">
+                            <input id="mq-pass" class="input" type="password" style="flex:1;">
+                            <button id="mq-pass-toggle"
+                                    class="btn secondary"
+                                    type="button"
+                                    title="Passwort anzeigen"
+                                    aria-label="Passwort anzeigen">👁️</button>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <label>Client ID</label><input id="mq-clientid" class="input" type="text" value="ComfoAirESP32">
+                    </div>
+                    <div class="row">
+                        <label>Topic Prefix</label><input id="mq-prefix" class="input" type="text" value="comfoair">
+                    </div>
+                    <div class="row">
+                        <label></label>
+                        <button class="btn primary" type="submit">Speichern</button>
+                    </div>
+                </form>
+                <p id="msg" class="hint" style="min-height:1.2em"></p>
+            </section>
+
+            <div class="row" style="margin-top:1rem; display:flex; justify-content:center; gap:.6rem;">
+                <a class="btn secondary" href="/settings">Zurück</a>
+                <a class="btn secondary" href="/">Startseite</a>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const $ = (id) => document.getElementById(id);
+        const msg = $("msg");
+
+        async function loadCfg() {
+            const r = await fetch("/api/mqtt/config", { cache: "no-store" });
+            if (!r.ok) throw new Error(`HTTP ${r.status}`);
+            const j = await r.json();
+            if (!j.ok) throw new Error(j.error || "Laden fehlgeschlagen");
+
+            $("mq-enabled").checked = !!j.enabled;
+            $("mq-host").value = j.host ?? "";
+            $("mq-port").value = j.port ?? 1883;
+            $("mq-user").value = j.user ?? "";
+            $("mq-pass").value = j.pass ?? "";
+            $("mq-clientid").value = j.clientId ?? "ComfoAirESP32";
+            $("mq-prefix").value = j.topicPrefix ?? "comfoair";
+        }
+
+        $("frm-mqtt").addEventListener("submit", async (ev) => {
+            ev.preventDefault();
+            msg.textContent = "";
+            try {
+                const q = new URLSearchParams({
+                    enabled: $("mq-enabled").checked ? "1" : "0",
+                    host: $("mq-host").value.trim(),
+                    port: $("mq-port").value,
+                    user: $("mq-user").value,
+                    pass: $("mq-pass").value,
+                    clientId: $("mq-clientid").value.trim(),
+                    topicPrefix: $("mq-prefix").value.trim()
+                });
+
+                const r = await fetch(`/api/mqtt/config?${q.toString()}`, { method: "POST" });
+                if (!r.ok) throw new Error(`HTTP ${r.status}`);
+                const j = await r.json().catch(() => ({}));
+                if (j.ok === false) throw new Error(j.error || "Speichern fehlgeschlagen");
+
+                msg.textContent = "MQTT-Konfiguration gespeichert.";
+            } catch (e) {
+                msg.textContent = `Fehler: ${e.message}`;
+            }
+        });
+
+        const passInput = $("mq-pass");
+        const passToggle = $("mq-pass-toggle");
+
+        if (passInput && passToggle) {
+            passToggle.addEventListener("click", () => {
+                const show = passInput.type === "password";
+                passInput.type = show ? "text" : "password";
+                passToggle.textContent = show ? "🙈" : "👁️";
+                passToggle.title = show ? "Passwort verbergen" : "Passwort anzeigen";
+                passToggle.setAttribute("aria-label", passToggle.title);
+            });
+        }
+
+        loadCfg().catch(e => { msg.textContent = `Fehler: ${e.message}`; });
+    </script>
+</body>
+</html>

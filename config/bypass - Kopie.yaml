@@ -1,0 +1,124 @@
+alias: ComfoAir Bypass getrennt mit Hysterese
+description: Bypass separat mit Hysterese, Lüfterstufen separat mit Hysterese.
+triggers:
+  - entity_id:
+      - sensor.comfoair_t3
+      - sensor.comfoair_comfort_temp
+      - sensor.ws2350_v2_39_outdoor_temperature
+    trigger: state
+  - minutes: /5
+    trigger: time_pattern
+conditions: []
+actions:
+  - variables:
+      abluft: "{{ states('sensor.comfoair_t3') | float(0) }}"
+      comfort: "{{ states('sensor.comfoair_comfort_temp') | float(0) }}"
+      aussen: "{{ states('sensor.ws2350_v2_39_outdoor_temperature') | float(0) }}"
+      diff: "{{ abluft - comfort }}"
+      nachtfenster: "{{ now().hour >= 3 and now().hour < 6 }}"
+      zuluft_ist: "{{ states('number.comfoair_manual_analog_supply') | float(0) }}"
+      abluft_ist: "{{ states('number.comfoair_manual_analog_exhaust') | float(0) }}"
+      hand_an: "{{ is_state('switch.comfoair_manual_mode', 'on') }}"
+      bypass_offen: "{{ is_state('select.comfoair_manual_bypass_setpoint', 'Offen') }}"
+      bypass_zu: "{{ is_state('select.comfoair_manual_bypass_setpoint', 'Zu') }}"
+      bypass_on: "{{ diff >= 1.0 }}"
+      bypass_hold: "{{ diff > 0.5 }}"
+      normal_on: "{{ diff > 1.0 }}"
+      normal_hold: "{{ diff > 0.5 }}"
+      nacht_on: "{{ diff > 3.0 and nachtfenster and aussen < 18 }}"
+      nacht_hold: "{{ diff > 2.5 and nachtfenster and aussen < 18 }}"
+      nacht_aktiv: "{{ zuluft_ist >= 49 and abluft_ist >= 49 }}"
+      normal_aktiv: >-
+        {{ zuluft_ist >= 19 and zuluft_ist < 49 and abluft_ist >= 19 and
+        abluft_ist < 49 }}
+  - choose:
+      - conditions:
+          - condition: template
+            value_template: "{{ bypass_on and not bypass_offen }}"
+        sequence:
+          - target:
+              entity_id: select.comfoair_manual_bypass_setpoint
+            data:
+              option: Offen
+            action: select.select_option
+      - conditions:
+          - condition: template
+            value_template: "{{ not bypass_hold and not bypass_zu }}"
+        sequence:
+          - target:
+              entity_id: select.comfoair_manual_bypass_setpoint
+            data:
+              option: Zu
+            action: select.select_option
+  - choose:
+      - conditions:
+          - condition: template
+            value_template: "{{ nacht_on or (nacht_aktiv and nacht_hold) }}"
+        sequence:
+          - if:
+              - condition: template
+                value_template: "{{ not hand_an }}"
+            then:
+              - target:
+                  entity_id: switch.comfoair_manual_mode
+                action: switch.turn_on
+          - if:
+              - condition: template
+                value_template: "{{ zuluft_ist != 50 }}"
+            then:
+              - target:
+                  entity_id: number.comfoair_manual_analog_supply
+                data:
+                  value: 50
+                action: number.set_value
+          - if:
+              - condition: template
+                value_template: "{{ abluft_ist != 50 }}"
+            then:
+              - target:
+                  entity_id: number.comfoair_manual_analog_exhaust
+                data:
+                  value: 50
+                action: number.set_value
+      - conditions:
+          - condition: template
+            value_template: "{{ normal_on or (normal_aktiv and normal_hold) }}"
+        sequence:
+          - if:
+              - condition: template
+                value_template: "{{ not hand_an }}"
+            then:
+              - target:
+                  entity_id: switch.comfoair_manual_mode
+                action: switch.turn_on
+          - if:
+              - condition: template
+                value_template: "{{ zuluft_ist != 25 }}"
+            then:
+              - target:
+                  entity_id: number.comfoair_manual_analog_supply
+                data:
+                  value: 25
+                action: number.set_value
+          - if:
+              - condition: template
+                value_template: "{{ abluft_ist != 25 }}"
+            then:
+              - target:
+                  entity_id: number.comfoair_manual_analog_exhaust
+                data:
+                  value: 25
+                action: number.set_value
+    default:
+      - if:
+          - condition: template
+            value_template: "{{ diff < 0.5 }}"
+        then:
+          - if:
+              - condition: template
+                value_template: "{{ hand_an }}"
+            then:
+              - target:
+                  entity_id: switch.comfoair_manual_mode
+                action: switch.turn_off
+mode: single

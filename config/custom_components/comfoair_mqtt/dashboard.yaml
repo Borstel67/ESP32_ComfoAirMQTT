@@ -1,0 +1,146 @@
+title: ComfoAir MQTT
+views:
+  - title: ComfoAir
+    path: comfoair
+    icon: mdi:fan
+    cards:
+      - type: entities
+        title: Status
+        entities:
+          - sensor.comfoair_online
+          - binary_sensor.comfoair_manual_mode_active
+          - sensor.comfoair_rs232_mode
+          - sensor.comfoair_last_command
+          - sensor.comfoair_last_command_ok
+
+      - type: entities
+        title: Lüfter
+        entities:
+          - sensor.comfoair_supply_percent
+          - sensor.comfoair_exhaust_percent
+          - sensor.comfoair_supply_rpm
+          - sensor.comfoair_exhaust_rpm
+          - sensor.comfoair_vent_current_level
+
+      - type: entities
+        title: Temperaturen
+        entities:
+          - sensor.comfoair_t1
+          - sensor.comfoair_t2
+          - sensor.comfoair_t3
+          - sensor.comfoair_t4
+          - sensor.comfoair_comfort_temp
+
+      - type: entities
+        title: Klappen
+        entities:
+          - sensor.comfoair_bypass_percent
+          - sensor.comfoair_preheater_state
+          - sensor.comfoair_manual_requested_bypass
+          - sensor.comfoair_manual_requested_preheater
+          - binary_sensor.comfoair_bypass_marker_open
+          - binary_sensor.comfoair_bypass_marker_closed
+          - binary_sensor.comfoair_preheater_marker_open
+          - binary_sensor.comfoair_preheater_marker_closed
+
+      - type: entities
+        title: Steuerung
+        entities:
+          - select.comfoair_set_level
+          - number.comfoair_set_comfort_temp
+          - select.comfoair_set_rs232_mode
+          - switch.comfoair_manual_mode
+
+      - type: entities
+        title: Schnellaktionen
+        entities:
+          - script.comfoair_manual_flaps_stop
+          - script.comfoair_manual_analog_50_50_0
+
+      - type: entities
+        title: Manuell Klappen (Sollwerte)
+        entities:
+          - input_select.comfoair_manual_bypass_setpoint
+          - input_select.comfoair_manual_preheater_setpoint
+          - input_number.comfoair_manual_flaps_autostop_seconds
+          - script.comfoair_manual_flaps_apply
+          - script.comfoair_manual_flaps_stop
+
+      - type: entities
+        title: Manuell Analog (Sollwerte)
+        entities:
+          - input_number.comfoair_manual_analog_supply
+          - input_number.comfoair_manual_analog_exhaust
+          - input_number.comfoair_manual_analog_postheater
+          - script.comfoair_manual_analog_apply
+          - script.comfoair_manual_analog_50_50_0
+
+      - type: entities
+        title: Anlagenstatus schreiben (Sollwerte)
+        entities:
+          - input_number.comfoair_status_preheater
+          - input_number.comfoair_status_bypass
+          - input_number.comfoair_status_type
+          - input_number.comfoair_status_size
+          - input_number.comfoair_status_options
+          - input_number.comfoair_status_enthalpy
+          - input_number.comfoair_status_ewt
+          - script.comfoair_status_apply
+
+      - type: entities
+        title: Vent-Level schreiben (Sollwerte)
+        entities:
+          - input_number.comfoair_vent_exhaust_absent
+          - input_number.comfoair_vent_exhaust_low
+          - input_number.comfoair_vent_exhaust_medium
+          - input_number.comfoair_vent_supply_absent
+          - input_number.comfoair_vent_supply_low
+          - input_number.comfoair_vent_supply_medium
+          - input_number.comfoair_vent_exhaust_high
+          - input_number.comfoair_vent_supply_high
+          - script.comfoair_vent_levels_apply
+
+  - title: Konfiguration
+    path: config
+    icon: mdi:cog
+    cards:
+      - type: entities
+        title: Anlagenkonfiguration
+        entities:
+          - sensor.comfoair_anlagenconf_type
+          - sensor.comfoair_anlagenconf_size
+          - sensor.comfoair_anlagenconf_options
+          - sensor.comfoair_anlagenconf_preheater_present
+          - sensor.comfoair_anlagenconf_bypass_present
+          - sensor.comfoair_anlagenconf_enthalpy_present
+          - sensor.comfoair_anlagenconf_ewt_present
+
+      - type: entities
+        title: Preheat
+        entities:
+          - sensor.comfoair_preheat_flap_status
+          - sensor.comfoair_preheat_frost_active
+          - sensor.comfoair_preheat_on
+          - sensor.comfoair_preheat_frost_mins
+          - sensor.comfoair_preheat_frost_safety
+
+      - type: entities
+        title: Delay
+        entities:
+          - sensor.comfoair_delay_bath_on
+          - sensor.comfoair_delay_bath_off
+          - sensor.comfoair_delay_boost_duration
+          - sensor.comfoair_delay_filter_weeks
+          - sensor.comfoair_delay_hood_off
+
+      - type: entities
+        title: AnalogConfig
+        entities:
+          - sensor.comfoair_analogcfg_present_flags
+          - sensor.comfoair_analogcfg_control_flags
+          - sensor.comfoair_analogcfg_polarity_flags
+          - sensor.comfoair_analogcfg_a1_setpoint
+          - sensor.comfoair_analogcfg_a2_setpoint
+          - sensor.comfoair_analogcfg_a3_setpoint
+          - sensor.comfoair_analogcfg_a4_setpoint
+          - sensor.comfoair_analogcfg_priority

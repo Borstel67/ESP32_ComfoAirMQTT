@@ -1,0 +1,293 @@
+<!doctype html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate, max-age=0" />
+    <meta http-equiv="Pragma" content="no-cache" />
+    <meta http-equiv="Expires" content="0" />
+    <meta name="theme-color" content="#2196F3" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="ComfoAir" />
+    <title>ComfoAir 350</title>
+    <link rel="icon" type="image/png" href="Zehnder.png">
+    <link rel="apple-touch-icon" href="Zehnder.png">
+    <link rel="manifest" href="manifest.json">
+    <link rel="stylesheet" type="text/css" href="WifiManager.css">
+</head>
+<body>
+    <div class="app">
+        <div class="header">
+            <div class="title">
+                <div class="logo" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" class="wifi-icon" aria-hidden="true">
+                        <path d="M12 18.5c.7 0 1.25.55 1.25 1.25S12.7 21 12 21s-1.25-.55-1.25-1.25S11.3 18.5 12 18.5z" />
+                        <path d="M8.5 16a6 6 0 0 1 7 0" />
+                        <path d="M6 13a9 9 0 0 1 12 0" />
+                        <path d="M3.5 10a12 12 0 0 1 17 0" />
+                    </svg>
+                </div>
+                <div>
+                    <h1>ComfoAir 350</h1>
+                    <div class="hint" style="margin:0">RS232 Live-Daten &amp; Steuerung</div>
+                </div>
+            </div>
+            <div class="actions">
+                <a class="gear" href="/settings" title="Einstellungen" aria-label="Einstellungen">⚙️</a>
+            </div>
+        </div>
+
+        <div class="card">
+            <section class="sec">
+                <h2>Live-Werte (RS232)</h2>
+                <div class="grid">
+                    <div class="row"><label>Vent-Level</label><span id="vent-cur">–</span></div>
+                    <div class="row"><label>Vent aktuell (%)</label><span id="vent-cur-pct">–</span></div>
+                    <div class="row"><label>Zuluft % / rpm</label><span id="fan-supply">–</span></div>
+                    <div class="row"><label>Abluft % / rpm</label><span id="fan-exhaust">–</span></div>
+                    <div class="row"><label>T1 Außen (°C)</label><span id="t1">–</span></div>
+                    <div class="row"><label>T2 Zuluft (°C)</label><span id="t2">–</span></div>
+                    <div class="row"><label>T3 Abluft (°C)</label><span id="t3">–</span></div>
+                    <div class="row"><label>T4 Fortluft (°C)</label><span id="t4">–</span></div>
+                    <div class="row"><label>Stand</label><span id="status">–</span></div>
+                    <div class="row"><label>Bypass Stufe</label><span id="bp-stage">–</span></div>
+                    <div class="row"><label>Sommermodus</label><span id="bp-summer">–</span></div>
+
+                    <!--
+                        Anzeige für den manuell angeforderten Bypass-Zustand.
+                        Der Text und der farbige Punkt werden zyklisch aus /api/comfo/state aktualisiert.
+                    -->
+                     <div class="row">
+                         <label>Bypass Anzeige</label>
+                         <span>
+                            <strong id="mf-marker-bypass">unbekannt</strong>
+                            <span id="mf-marker-bypass-dot" style="display:inline-block;width:.6rem;height:.6rem;border-radius:50%;background:#9aa0a6;margin-left:.4rem;"></span>
+                        </span>
+                    </div>
+                </div>
+            </section>
+
+            <section class="sec">
+                <h2>Schreiben</h2>
+
+                <!--
+                    Steuerung des manuellen Modus.
+                    Der linke Punkt ist grün, wenn der manuelle Modus aktiv ist.
+                    Der rechte Punkt ist grün, wenn der manuelle Modus beendet bzw. inaktiv ist.
+                -->
+                 <div class="row" style="display:flex; gap:.6rem; flex-wrap:wrap;">
+                     <button id="btn-manual-start" class="btn primary" type="button">
+                         <span id="mm-dot-start" style="display:inline-block;width:1rem;height:1rem;border-radius:50%;background:#9aa0a6;margin-right:.45rem;vertical-align:middle;"></span>
+                        Manuellen Modus starten
+                     </button>
+                     <button id="btn-manual-end" class="btn secondary" type="button">
+                         <span id="mm-dot-end" style="display:inline-block;width:1rem;height:1rem;border-radius:50%;background:#1db954;margin-right:.45rem;vertical-align:middle;"></span>
+                        Manuellen Modus beenden
+                     </button>
+                </div>
+
+                <form id="frm-level" class="row" style="display:flex; flex-direction:column; gap:0.4rem;">
+    <div><label style="text-align:left; display:block;">Ventilator Stufe</label></div>
+    <div style="display:flex; flex-wrap:wrap; align-items:center; gap:0.5rem;">
+        <label><input type="radio" name="level" value="0"> Auto</label>
+        <label><input type="radio" name="level" value="1"> Stufe 1</label>
+        <label><input type="radio" name="level" value="2"> Stufe 2</label>
+        <label><input type="radio" name="level" value="3"> Stufe 3</label>
+        <label><input type="radio" name="level" value="4"> Stufe 4</label>
+    </div>
+</form>
+
+                <form id="frm-temp" class="row" style="display:flex; flex-direction:column; gap:0.4rem;">
+                    <div><label for="tempC" style="text-align:left; display:block;">Komforttemp (°C)</label></div>
+                    <div style="display:flex; align-items:center; gap:0.6rem;">
+                        <input id="tempC" class="input" type="number" min="-10" max="40" value="20" style="width:140px; text-align:left;" />
+                        <button class="btn primary" type="submit">Setzen</button>
+                    </div>
+                </form>
+                <p id="msg" class="hint" style="min-height:1.2em"></p>
+            </section>
+
+            <div class="row" style="margin-top:1rem; display:flex; justify-content:center; gap:.6rem;">
+    <a class="btn" href="/ComfoAirSettings.html">ComfoAir Settings</a>
+    <a class="btn secondary" href="/">Zur Startseite</a>
+</div>
+        </div>
+
+        <footer class="copyright">
+             © 2026 R.Wisser · ComfoAirDriver
+         </footer>
+     </div>
+
+    <script>
+    const $ = id => document.getElementById(id);
+    const msg = $("msg");
+    const fmt = (v, unit = "") => (v === undefined || v === null ? "–" : `${v}${unit}`);
+
+    const modeText = m => ({
+        0: "Ohne Verbindung",
+        1: "Nur PC",
+        2: "Nur CC-Ease",
+        3: "PC Master",
+        4: "PC Logmodus"
+    }[m] || fmt(m));
+
+    // Wandelt die Eingabe der Komforttemperatur in eine gültige Zahl um.
+    // Komma-Eingaben werden akzeptiert und der Wert wird auf -10 bis 40 °C begrenzt.
+    function parseTempInput(raw) {
+        const n = Number(String(raw).replace(",", "."));
+        if (!Number.isFinite(n)) return null;
+        return Math.max(-10, Math.min(40, n));
+    }
+
+    // Lädt den aktuellen Gerätestatus von der API und aktualisiert alle Live-Anzeigen.
+    async function loadState() {
+        try {
+            const r = await fetch(`/api/comfo/state?t=${Date.now()}`, { cache: "no-store" });
+            if (!r.ok) throw new Error(`HTTP ${r.status}`);
+            const j = await r.json();
+            if (!j.ok) throw new Error("ComfoAir nicht bereit");
+
+            const rsEl = $("rs-mode");
+            if (rsEl) rsEl.textContent = modeText(j.rs232Mode);
+
+            $("vent-cur").textContent = fmt(j.vent?.current);
+            $("vent-cur-pct").textContent = `Sup ${fmt(j.vent?.supplyCur, "%")} | Exh ${fmt(j.vent?.exhaustCur, "%")}`;
+            $("fan-supply").textContent = `${fmt(j.fan?.supplyPct, "%")} / ${fmt(j.fan?.supplyRpm, " rpm")}`;
+            $("fan-exhaust").textContent = `${fmt(j.fan?.exhaustPct, "%")} / ${fmt(j.fan?.exhaustRpm, " rpm")}`;
+            $("t1").textContent = fmt(j.temps?.t1);
+            $("t2").textContent = fmt(j.temps?.t2);
+            $("t3").textContent = fmt(j.temps?.t3);
+            $("t4").textContent = fmt(j.temps?.t4);
+            $("status").textContent = "OK";
+            $("bp-stage").textContent = fmt(j.bypass?.stage);
+            $("bp-summer").textContent = (j.bypass?.summerMode === 1) ? "Ja" : "Nein";
+
+            // Manuellen Modus und Bypass-Anzeige mit dem aktuellen API-Zustand synchronisieren.
+            setManualModeDots(!!j.manualModeActive);
+            renderManualBypassMarker(j.manual || {});
+
+            // Komfort-Sollwert zurück ins Eingabefield (falls verfügbar)
+            if (j.temps?.comfortC !== undefined && j.temps?.comfortC !== null) {
+                $("tempC").value = j.temps.comfortC;
+            }
+
+            // Radio-Auswahl mit aktuellem Vent-Level synchronisieren
+            const lvl = Number(j.vent?.current);
+            if (Number.isFinite(lvl)) {
+                const rb = document.querySelector(`input[name="level"][value="${lvl}"]`);
+                if (rb) rb.checked = true;
+            }
+
+            msg.textContent = "";
+        } catch (e) {
+            msg.textContent = `Fehler: ${e.message}`;
+            $("status").textContent = "Fehler";
+        }
+    }
+
+    async function postAndRefresh(url) {
+        msg.textContent = "";
+        const r = await fetch(url, { method: "POST", cache: "no-store" });
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        const j = await r.json().catch(() => ({}));
+        if (j.ok === false) throw new Error(j.error || "Gerät meldet Fehler");
+        try { await loadState(); } catch (_) {}
+    }
+
+    // Wird beim Ändern der Ventilator-Radio-Buttons aufgerufen.
+    // Die gewählte Stufe wird sofort an die ComfoAir gesendet.
+    async function setLevelAutoFromRadio() {
+        const selected = document.querySelector('input[name="level"]:checked');
+        const level = selected ? Number(selected.value) : NaN;
+        if (!Number.isFinite(level)) return;
+
+        try {
+            await postAndRefresh(`/api/comfo/setLevel?level=${encodeURIComponent(level)}`);
+            msg.textContent = "Vent-Stufe gesetzt.";
+        } catch (e) {
+            msg.textContent = `Fehler beim Setzen: ${e.message}`;
+        }
+    }
+
+    const setManualModeDots = (active) => {
+        const dotStart = $("mm-dot-start");
+        const dotEnd = $("mm-dot-end");
+        if (!dotStart || !dotEnd) return;
+
+        // Farblogik:
+        // aktiv: Start-Punkt grün, Ende-Punkt grau
+        // inaktiv: Start-Punkt grau, Ende-Punkt grün
+        dotStart.style.background = active ? "#1db954" : "#9aa0a6";
+        dotEnd.style.background = active ? "#9aa0a6" : "#1db954";
+
+        dotStart.title = active ? "Manueller Modus aktiv" : "Manueller Modus nicht aktiv";
+        dotEnd.title = active ? "Manueller Modus nicht beendet" : "Manueller Modus beendet";
+    }
+
+    // Aktualisiert die Bypass-Anzeige für den manuellen Modus.
+    // offen = grün, zu = rot, unbekannt/Stop = grau.
+    const renderManualBypassMarker = (manual) => {
+        const bText = $("mf-marker-bypass");
+        const bDot = $("mf-marker-bypass-dot");
+        if (!bText || !bDot) return;
+
+        const bypassText = (manual?.requestedBypassText ?? "unbekannt").toLowerCase();
+        bText.textContent = bypassText;
+
+        // Farbe des Statuspunkts anhand des Bypass-Textes setzen.
+        if (bypassText === "offen") bDot.style.background = "#1db954";
+        else if (bypassText === "zu") bDot.style.background = "#e53935";
+        else bDot.style.background = "#9aa0a6";
+
+        bDot.title = `Bypass: ${bypassText}`;
+    }
+
+    document.querySelectorAll('input[name="level"]').forEach(rb => {
+        rb.addEventListener("change", setLevelAutoFromRadio);
+    });
+
+    // Startet den manuellen Modus und lädt danach den aktuellen Status neu.
+    $("btn-manual-start").addEventListener("click", async () => {
+        try {
+            await postAndRefresh("/api/comfo/manual/start");
+            msg.textContent = "Manueller Modus gestartet.";
+        } catch (e) {
+            msg.textContent = `Fehler: ${e.message}`;
+        }
+    });
+
+    // Beendet den manuellen Modus und lädt danach den aktuellen Status neu.
+    $("btn-manual-end").addEventListener("click", async () => {
+        try {
+            await postAndRefresh("/api/comfo/manual/end");
+            msg.textContent = "Manueller Modus beendet.";
+        } catch (e) {
+            msg.textContent = `Fehler: ${e.message}`;
+        }
+    });
+
+    // Setzt die Komforttemperatur über die API.
+    $("frm-temp").addEventListener("submit", async ev => {
+        ev.preventDefault();
+        const t = parseTempInput($("tempC").value);
+        if (t === null) {
+            msg.textContent = "Fehler: Ungültige Komforttemperatur.";
+            return;
+        }
+        try {
+            await postAndRefresh(`/api/comfo/setComfort?tempC=${encodeURIComponent(t)}`);
+            msg.textContent = "Komforttemperatur gesetzt.";
+        } catch (e) {
+            msg.textContent = `Fehler beim Setzen: ${e.message}`;
+        }
+    });
+
+    // Initiales Laden der Live-Daten.
+    loadState();
+
+    // Live-Daten zyklisch aktualisieren.
+    setInterval(loadState, 5000);
+</script>
+</body>
+</html>

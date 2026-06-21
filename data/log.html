@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate, max-age=0" />
+    <title>Serial Log</title>
+    <link rel="icon" type="image/png" href="Zehnder.png">
+    <link rel="apple-touch-icon" href="Zehnder.png">
+    <link rel="stylesheet" type="text/css" href="WifiManager.css">
+    <style>
+        pre { background:#0a0a0a; color:#e0e0e0; padding:12px; border-radius:8px; max-height:70vh; overflow:auto; }
+        .controls { display:flex; gap:8px; align-items:center; margin-bottom:8px; }
+    </style>
+</head>
+<body>
+<div class="app">
+    <div class="header">
+        <div class="title">
+            <div class="logo" aria-hidden="true">📜</div>
+            <div><h1>Serial Log</h1><div class="hint">Live-Ansicht der seriellen Ausgabe</div></div>
+        </div>
+        <div class="actions"><a class="gear" href="/" title="Home">🏠</a></div>
+    </div>
+
+    <div class="card">
+        <section class="sec">
+            <div class="controls">
+                <button id="btn-refresh" class="btn">Aktualisieren</button>
+                <label><input type="checkbox" id="auto" checked> Auto (2s)</label>
+                <button id="btn-clear" class="btn secondary">Leeren</button>
+            </div>
+            <pre id="log">(lade...)</pre>
+        </section>
+    </div>
+
+    <footer class="copyright">© 2026 R.Wisser</footer>
+</div>
+
+<script>
+const pre = document.getElementById('log');
+const auto = document.getElementById('auto');
+const refresh = () => {
+    fetch('/api/logs', { cache: 'no-store' })
+        .then(r => r.text())
+        .then(t => {
+            pre.textContent = t || '(leer)';
+            pre.scrollTop = pre.scrollHeight;
+        })
+        .catch(() => pre.textContent = '(Fehler beim Laden)');
+};
+document.getElementById('btn-refresh').onclick = refresh;
+document.getElementById('btn-clear').onclick = () => { fetch('/api/logs?clear=1'); pre.textContent='(leer)'; };
+setInterval(() => { if (auto.checked) refresh(); }, 2000);
+refresh();
+</script>
+</body>
+</html>

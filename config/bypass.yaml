@@ -1,0 +1,171 @@
+alias: ComfoAir Bypass getrennt mit Hysterese
+description: Bypass separat mit Hysterese, Lüfterstufen separat mit Hysterese.
+
+# Auslöser:
+# - bei Änderung der relevanten Temperatur-Sensoren
+# - zusätzlich alle 5 Minuten als Sicherheits-/Nachlaufprüfung
+triggers:
+  - entity_id:
+      - sensor.comfoair_t3
+      - sensor.comfoair_comfort_temp
+      - sensor.ws2350_v2_39_outdoor_temperature
+    trigger: state
+  - minutes: "/5"
+    trigger: time_pattern
+
+conditions: []
+
+actions:
+  # Alle benötigten Istwerte, Zustände und Schaltschwellen werden zentral berechnet.
+  - variables:
+      # Temperaturwerte
+      abluft: "{{ states('sensor.comfoair_t3') | float(0) }}"
+      comfort: "{{ states('sensor.comfoair_comfort_temp') | float(0) }}"
+      aussen: "{{ states('sensor.ws2350_v2_39_outdoor_temperature') | float(0) }}"
+
+      # Temperaturdifferenz:
+      # positiv = Abluft ist wärmer als Komforttemperatur
+      diff: "{{ abluft - comfort }}"
+
+      # Nachtfenster für stärkere Lüftung
+      nachtfenster: "{{ now().hour >= 3 and now().hour < 6 }}"
+
+      # Aktuelle manuelle Analogwerte der Lüftung
+      zuluft_ist: "{{ states('number.comfoair_manual_analog_supply') | float(0) }}"
+      abluft_ist: "{{ states('number.comfoair_manual_analog_exhaust') | float(0) }}"
+
+      # Status des manuellen Modus
+      hand_an: "{{ is_state('switch.comfoair_manual_mode', 'on') }}"
+
+      # Aktueller Bypass-Sollwert.
+      # Wird nur zur Vermeidung unnötiger MQTT-Kommandos gelesen.
+      # Der Select wird NICHT mehr beschrieben, damit kein not_valid_option entsteht.
+      bypass_offen: >-
+        {{ states('select.comfoair_manual_bypass_setpoint') | lower == 'offen' }}
+
+      # Bypass-Hysterese:
+      # Einschalten ab diff >= 1.0
+      # Halten solange diff > 0.5
+      bypass_on: "{{ diff >= 1.0 }}"
+      bypass_hold: "{{ diff > 0.5 }}"
+
+      # Normale Lüftungs-Hysterese
+      normal_on: "{{ diff > 1.0 }}"
+      normal_hold: "{{ diff > 0.5 }}"
+
+      # Nachtlüftung:
+      # nur im Nachtfenster, bei ausreichend hoher Differenz
+      # und wenn die Außentemperatur unter 18 °C liegt
+      nacht_on: "{{ diff > 3.0 and nachtfenster and aussen < 18 }}"
+      nacht_hold: "{{ diff > 2.5 and nachtfenster and aussen < 18 }}"
+
+      # Erkennung, ob die Automation aktuell schon Nachtlüftung aktiv gesetzt hat
+      nacht_aktiv: "{{ zuluft_ist >= 49 and abluft_ist >= 49 }}"
+
+      # Erkennung, ob die Automation aktuell schon Normallüftung aktiv gesetzt hat
+      normal_aktiv: >-
+        {{ zuluft_ist >= 19 and zuluft_ist < 49 and abluft_ist >= 19 and
+        abluft_ist < 49 }}
+
+      # Zielzustände für Lüftungslogik
+      lueftung_nacht: "{{ nacht_on or (nacht_aktiv and nacht_hold) }}"
+      lueftung_normal: "{{ normal_on or (normal_aktiv and normal_hold) }}"
+      lueftung_an: "{{ lueftung_nacht or lueftung_normal }}"
+
+      # Sollwerte für die Lüfterstufen
+      sollwert_nacht: 50
+      sollwert_normal: 25
+
+      # Separat berechnete Sollwerte für Zu- und Abluft.
+      # Nachtlüftung hat Priorität vor Normallüftung.
+      zuluft_soll: "{{ sollwert_nacht if lueftung_nacht else sollwert_normal }}"
+      abluft_soll: "{{ sollwert_nacht if lueftung_nacht else sollwert_normal }}"
+
+  # Bypass-Steuerung:
+  # - bei ausreichender Temperaturdifferenz manuellen Modus aktivieren
+  # - Bypass per JSON-MQTT-Befehl öffnen
+  # - bei Unterschreiten der Halteschwelle manuellen Modus beenden
+  - choose:
+      - conditions:
+          - condition: template
+            value_template: "{{ bypass_on and not bypass_offen }}"
+        sequence:
+          # Manuellen Modus nur einschalten, wenn er noch nicht aktiv ist.
+          - if:
+              - condition: template
+                value_template: "{{ not hand_an }}"
+            then:
+              - target:
+                  entity_id: switch.comfoair_manual_mode
+                action: switch.turn_on
+
+          # Bypass direkt per JSON-MQTT öffnen.
+          # bypass: 1 = offen
+          # preheater: 3 = unverändert/stop
+          # delaySeconds: 0 = kein Auto-Stop
+          - action: mqtt.publish
+            data:
+              topic: comfoair/cmd/manual/flaps/bereich
+              payload: '{"bypass":1,"preheater":3,"delaySeconds":0}'
+
+      - conditions:
+          - condition: template
+            value_template: "{{ not bypass_hold and hand_an }}"
+        sequence:
+          # Nicht auf eine Select-Option wie "Automatik" oder "zu" setzen.
+          # Stattdessen manuellen Modus beenden, damit die Anlage wieder selbst regelt.
+          - target:
+              entity_id: switch.comfoair_manual_mode
+            action: switch.turn_off
+
+  # Lüftersteuerung:
+  # Wenn Normal- oder Nachtlüftung aktiv sein soll,
+  # manuellen Modus aktivieren und Sollwerte setzen.
+  - choose:
+      - conditions:
+          - condition: template
+            value_template: "{{ lueftung_an }}"
+        sequence:
+          # Manuellen Modus nur einschalten, wenn er noch nicht aktiv ist.
+          - if:
+              - condition: template
+                value_template: "{{ not hand_an }}"
+            then:
+              - target:
+                  entity_id: switch.comfoair_manual_mode
+                action: switch.turn_on
+
+          # Zuluft nur schreiben, wenn der Istwert vom Sollwert abweicht.
+          - if:
+              - condition: template
+                value_template: "{{ zuluft_ist != zuluft_soll }}"
+            then:
+              - target:
+                  entity_id: number.comfoair_manual_analog_supply
+                data:
+                  value: "{{ zuluft_soll }}"
+                action: number.set_value
+
+          # Abluft nur schreiben, wenn der Istwert vom Sollwert abweicht.
+          - if:
+              - condition: template
+                value_template: "{{ abluft_ist != abluft_soll }}"
+            then:
+              - target:
+                  entity_id: number.comfoair_manual_analog_exhaust
+                data:
+                  value: "{{ abluft_soll }}"
+                action: number.set_value
+
+    default:
+      # Wenn keine Lüftungsanforderung mehr besteht und die Differenz klein genug ist,
+      # manuellen Modus beenden.
+      - if:
+          - condition: template
+            value_template: "{{ diff < 0.5 and hand_an }}"
+        then:
+          - target:
+              entity_id: switch.comfoair_manual_mode
+            action: switch.turn_off
+
+mode: single

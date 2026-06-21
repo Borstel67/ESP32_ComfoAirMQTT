@@ -1,0 +1,45 @@
+{
+  "name": "ComfoAir MQTT IoT Manager",
+  "short_name": "ComfoAir",
+  "description": "Web-basierte Steuerung für ComfoAir 350 mit MQTT und WiFi-Management",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "theme_color": "#2196F3",
+  "background_color": "#ffffff",
+  "icons": [
+    {
+      "src": "Zehnder-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "Zehnder-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "Zehnder-maskable-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "Zehnder-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "categories": ["productivity", "utilities"],
+  "screenshots": [
+    {
+      "src": "Zehnder.png",
+      "sizes": "540x720",
+      "type": "image/png"
+    }
+  ]
+}

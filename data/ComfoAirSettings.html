@@ -1,0 +1,518 @@
+<!doctype html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate, max-age=0" />
+    <meta http-equiv="Pragma" content="no-cache" />
+    <meta http-equiv="Expires" content="0" />
+    <title>ComfoAir Settings</title>
+    <link rel="icon" type="image/png" href="Zehnder.png">
+    <link rel="apple-touch-icon" href="Zehnder.png">
+    <link rel="stylesheet" type="text/css" href="WifiManager.css">
+</head>
+<body>
+    <div class="app">
+        <div class="header">
+            <div class="title"><h1>ComfoAir Settings</h1></div>
+            <div class="actions"><a class="gear" href="/settings" title="Einstellungen" aria-label="Einstellungen">⚙️</a></div>
+        </div>
+
+        <div class="card">
+            <section class="sec">
+                <h2>Anlagenkonfiguration</h2>
+                <form id="frm-status" style="display:grid; gap:.5rem">
+                    <div class="row"><label>Vorheizung anwesend (0/1)</label><input id="st-preheater" class="input" type="number" min="0" max="1" value="1"></div>
+                    <div class="row"><label>Bypass anwesend (0/1)</label><input id="st-bypass" class="input" type="number" min="0" max="1" value="1"></div>
+                    <div class="row"><label>Typ (1=links / 2=rechts)</label><input id="st-type" class="input" type="number" min="1" max="2" value="1"></div>
+                    <div class="row"><label>Größe (1=groß / 2=klein)</label><input id="st-size" class="input" type="number" min="1" max="2" value="1"></div>
+                    <div class="row"><label>Optionen</label><input id="st-options" class="input" type="number" min="0" max="255" value="0"></div>
+                    <div class="row"><label>Enthalpie anwesend (0/1)</label><input id="st-enthalpy" class="input" type="number" min="0" max="2" value="0"></div>
+                    <div class="row"><label>EWT anwesend (0/1)</label><input id="st-ewt" class="input" type="number" min="0" max="2" value="0"></div>
+                    <div class="row"><label></label><button class="btn primary" type="submit">Setzen</button></div>
+                </form>
+            </section>
+
+            <section class="sec">
+                <h2>Ventilationsstufen setzen</h2>
+                <form id="frm-vent-levels" style="display:grid; gap:.5rem; margin-top:1rem">
+                    <div class="row"><label>Zuluft Stufe 1 (%)</label><input id="vl-sa" class="input" type="number" min="0" max="100" value="20"></div>
+                    <div class="row"><label>Abluft Stufe 1 (%)</label><input id="vl-ea" class="input" type="number" min="0" max="100" value="20"></div>
+                    <div class="row"><label>Zuluft Stufe 2 (%)</label><input id="vl-sl" class="input" type="number" min="0" max="100" value="35"></div>
+                    <div class="row"><label>Abluft Stufe 2 (%)</label><input id="vl-el" class="input" type="number" min="0" max="100" value="35"></div>
+                    <div class="row"><label>Zuluft Stufe 3 (%)</label><input id="vl-sm" class="input" type="number" min="0" max="100" value="55"></div>
+                    <div class="row"><label>Abluft Stufe 3 (%)</label><input id="vl-em" class="input" type="number" min="0" max="100" value="55"></div>
+                    <div class="row"><label>Zuluft Stufe 4 (%)</label><input id="vl-sh" class="input" type="number" min="0" max="100" value="80"></div>
+                    <div class="row"><label>Abluft Stufe 4 (%)</label><input id="vl-eh" class="input" type="number" min="0" max="100" value="80"></div>
+                    <div class="row"><label></label><button class="btn primary" type="submit">Setzen</button></div>
+                </form>
+            </section>
+
+            <section class="sec">
+                <h2>Komforttemperatur setzen</h2>
+                <form id="frm-temp" style="display:grid; gap:.5rem; margin-top:1rem">
+                    <div class="row"><label>Komforttemp (°C)</label><input id="tempC" class="input" type="number" min="-10" max="40" step="0.5" value="20"></div>
+                    <div class="row"><label></label><button class="btn primary" type="submit">Setzen</button></div>
+                </form>
+            </section>
+
+            <section class="sec">
+                <h2>Manueller Modus</h2>
+
+                <div class="row" style="display:flex; gap:.6rem;">
+                    <button id="btn-manual-start" class="btn primary" type="button">
+                        <span id="mm-dot-start" style="display:inline-block;width:1rem;height:1rem;border-radius:50%;background:#9aa0a6;margin-right:.45rem;vertical-align:middle;"></span>
+                        Manuellen Modus Ein
+                    </button>
+                    <button id="btn-manual-end" class="btn secondary" type="button">
+                        <span id="mm-dot-end" style="display:inline-block;width:1rem;height:1rem;border-radius:50%;background:#1db954;margin-right:.45rem;vertical-align:middle;"></span>
+                        Manuellen Modus Aus
+                    </button>
+                </div>
+
+                <div class="row">
+                    <label>Auto-Stop Zeit (s, 0 = manuell)</label>
+                    <div style="display:flex; gap:.6rem; align-items:center;">
+                        <input id="mf-stop-seconds" class="input" type="number" min="0" max="600" step="1" value="0">
+                        <button id="btn-manual-stop-seconds-save" class="btn primary" type="button">Setzen</button>
+                    </div>
+                </div>
+
+                <form id="frm-manual-flaps" style="display:grid; gap:.5rem; margin-top:1rem;">
+                    <div class="row" style="display:block;">
+                        <label style="display:block; margin-bottom:.3rem;">Bypass (0=Zu:, 1=Offen:, 3=Stop)</label>
+                        <label><input type="radio" name="mf-bypass" value="0"> Zu:</label>
+                        <label style="margin-left:.8rem;"><input type="radio" name="mf-bypass" value="1"> Offen:</label>
+                        <label style="margin-left:.8rem;"><input type="radio" name="mf-bypass" value="3" checked> Stop</label>
+                        <div style="display:flex; align-items:center; gap:.5rem; margin:.2rem 0;">
+                            <span>Bypass: <strong id="mf-marker-bypass">unbekannt</strong></span>
+                            <span id="mf-marker-bypass-dot" style="display:inline-block;width:.6rem;height:.6rem;border-radius:50%;background:#9aa0a6;"></span>
+                        </div>
+                    </div>
+
+                    <div class="row" style="display:block;">
+                        <label style="display:block; margin-bottom:.3rem;">Vorheizung (0=Zu:, 1=Offen:, 3=Stop)</label>
+                        <label><input type="radio" name="mf-preheater" value="0"> Zu:</label>
+                        <label style="margin-left:.8rem;"><input type="radio" name="mf-preheater" value="1"> Offen:</label>
+                        <label style="margin-left:.8rem;"><input type="radio" name="mf-preheater" value="3" checked> Stop</label>
+                        <div style="display:flex; align-items:center; gap:.5rem; margin:.2rem 0;">
+                            <span>Vorheizung: <strong id="mf-marker-preheater">unbekannt</strong></span>
+                            <span id="mf-marker-preheater-dot" style="display:inline-block;width:.6rem;height:.6rem;border-radius:50%;background:#9aa0a6;"></span>
+                        </div>
+                    </div>
+                </form>
+            </section>
+
+            <section class="sec">
+                <h2>Analogausgänge setzen</h2>
+                <form id="frm-manual-analog" style="display:grid; gap:.5rem; margin-top:1rem;">
+                    <div class="row"><label>Zulüfter (%)</label><input id="ta-supply" class="input" type="number" min="0" max="100" step="1" value="0"></div>
+                    <div class="row"><label>Ablüfter (%)</label><input id="ta-exhaust" class="input" type="number" min="0" max="100" step="1" value="0"></div>
+                    <div class="row"><label>Nachheizung (%)</label><input id="ta-postheater" class="input" type="number" min="0" max="100" step="1" value="0"></div>
+                    <div class="row"><label></label><button class="btn primary" type="submit">Setzen</button></div>
+                </form>
+            </section>
+
+            <section class="sec">
+                <h2>System</h2>
+                <div class="row" style="display:flex; gap:.6rem; align-items:center;">
+                    <label>Controller</label>
+                    <button id="btn-reboot" class="btn secondary" type="button">Neustart</button>
+                </div>
+            </section>
+
+            <p id="msg" class="hint" style="min-height:1.2em"></p>
+
+            <div class="row" style="margin-top:1rem; display:flex; justify-content:center; gap:.6rem;">
+                <a class="btn" href="/ComfoAirDriver.html">ComfoAir 350</a>
+                <a class="btn secondary" href="/">Zur Startseite</a>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const $ = id => document.getElementById(id);
+        const msg = $("msg");
+        let defaultsLoaded = false;
+
+        const flapStateText = (v) => ({ 0: "Zu", 1: "Offen", 2: "Unbekannt" }[v] ?? "–");
+
+        async function postComfo(url) {
+            msg.textContent = "";
+            const r = await fetch(url, { method: "POST" });
+            if (!r.ok) throw new Error(`HTTP ${r.status}`);
+            const j = await r.json().catch(() => ({}));
+            if (j.ok === false) throw new Error(j.error || "Gerät meldet Fehler");
+        }
+
+        async function postComfoForm(url, paramsObj) {
+            msg.textContent = "";
+            const body = new URLSearchParams(paramsObj).toString();
+            const r = await fetch(url, {
+                method: "POST",
+                headers: { "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8" },
+                body
+            });
+            if (!r.ok) throw new Error(`HTTP ${r.status}`);
+            const j = await r.json().catch(() => ({}));
+            if (j.ok === false) throw new Error(j.error || "Gerät meldet Fehler");
+        }
+
+        function setIfNum(id, v) {
+            const el = $(id);
+            if (!el) return;
+            if (typeof v === "number" && !Number.isNaN(v)) el.value = v;
+        }
+
+        function setManualModeDots(active) {
+            const dotStart = $("mm-dot-start");
+            const dotEnd = $("mm-dot-end");
+            if (!dotStart || !dotEnd) return;
+
+            dotStart.style.background = active ? "#1db954" : "#9aa0a6";
+            dotEnd.style.background = active ? "#9aa0a6" : "#1db954";
+
+            dotStart.title = active ? "Manueller Modus aktiv" : "Manueller Modus nicht aktiv";
+            dotEnd.title = active ? "Manueller Modus nicht beendet" : "Manueller Modus beendet";
+        }
+
+        let bypassStopTimer = null;
+        let preheaterStopTimer = null;
+
+        function setRadioValue(groupName, value) {
+            const el = document.querySelector(`input[name="${groupName}"][value="${value}"]`);
+            if (el) el.checked = true;
+        }
+
+        function clearUiStopTimers() {
+            if (bypassStopTimer) { clearTimeout(bypassStopTimer); bypassStopTimer = null; }
+            if (preheaterStopTimer) { clearTimeout(preheaterStopTimer); preheaterStopTimer = null; }
+        }
+
+        function scheduleUiAutoStop(delaySec, bypassVal, preheaterVal) {
+            clearUiStopTimers();
+            if (delaySec <= 0) return; // Projektregel
+
+            if (bypassVal === "0" || bypassVal === "1") {
+                bypassStopTimer = setTimeout(() => setRadioValue("mf-bypass", "3"), delaySec * 1000);
+            }
+            if (preheaterVal === "0" || preheaterVal === "1") {
+                preheaterStopTimer = setTimeout(() => setRadioValue("mf-preheater", "3"), delaySec * 1000);
+            }
+        }
+
+        function renderManualMarkers(manual) {
+            const bText = $("mf-marker-bypass");
+            const pText = $("mf-marker-preheater");
+            const bDot = $("mf-marker-bypass-dot");
+            const pDot = $("mf-marker-preheater-dot");
+            if (!bText || !pText || !bDot || !pDot) return;
+
+            const bypassText = (manual?.requestedBypassText ?? "unbekannt").toLowerCase();
+            const preheaterText = (manual?.requestedPreheaterText ?? "unbekannt").toLowerCase();
+
+            bText.textContent = bypassText;
+            pText.textContent = preheaterText;
+
+            const dotColor = (t) => {
+                if (t === "offen") return "#1db954";   // grün
+                if (t === "zu") return "#e53935";      // rot
+                return "#9aa0a6";                      // grau
+            };
+
+            bDot.style.background = dotColor(bypassText);
+            pDot.style.background = dotColor(preheaterText);
+
+            bDot.title = `Bypass: ${bypassText}`;
+            pDot.title = `Vorheizung: ${preheaterText}`;
+        }
+
+        async function syncManualModeDotFromState() {
+            try {
+                const r = await fetch("/api/comfo/state", { cache: "no-store" });
+                if (!r.ok) return;
+                const j = await r.json();
+                if (j && j.ok) {
+                    setManualModeDots(!!j.manualModeActive);
+                    renderManualMarkers(j.manual || {});
+                }
+            } catch (_) {}
+        }
+
+        function toNumOrNull(v) {
+            const n = Number(v);
+            return Number.isFinite(n) ? n : null;
+        }
+
+        function setInputNum(id, v) {
+            const el = $(id);
+            const n = toNumOrNull(v);
+            if (!el || n === null) return false;
+            el.value = String(n);
+            return true;
+        }
+
+        async function syncManualConfigFromServer() {
+            // 1) Primär: config.json
+            let gotSupply = false, gotExhaust = false, gotPost = false, gotDelay = false;
+            try {
+                const rCfg = await fetch(`/api/comfo/manual/config?_=${Date.now()}`, { cache: "no-store" });
+                if (rCfg.ok) {
+                    const cfg = await rCfg.json();
+                    if (cfg && cfg.ok) {
+                        gotSupply = setInputNum("ta-supply", cfg.supply);
+                        gotExhaust = setInputNum("ta-exhaust", cfg.exhaust);
+                        gotPost = setInputNum("ta-postheater", cfg.postheater);
+                        gotDelay = setInputNum("mf-stop-seconds", cfg.delaySeconds);
+                    }
+                }
+            } catch (_) {}
+
+            // 2) Fallback: Live-State
+            if (!gotSupply || !gotExhaust || !gotPost) {
+                try {
+                    const r = await fetch(`/api/comfo/state?_=${Date.now()}`, { cache: "no-store" });
+                    if (!r.ok) return;
+                    const j = await r.json();
+                    if (!j || !j.ok) return;
+                    const a = j?.manual?.analogCmd || {};
+
+                    if (!gotSupply) setInputNum("ta-supply", a.supply);
+                    if (!gotExhaust) setInputNum("ta-exhaust", a.exhaust);
+                    if (!gotPost) setInputNum("ta-postheater", a.postheater);
+                } catch (_) {}
+            }
+        }
+
+        async function refreshAllFromServer() {
+            // Reihenfolge: erst allgemeiner State, dann config.json-Werte
+            await syncManualModeDotFromState();
+            await syncManualConfigFromServer();
+        }
+
+        async function loadDefaultsFromState() {
+            if (defaultsLoaded) return;
+
+            const r = await fetch("/api/comfo/state");
+            if (!r.ok) throw new Error(`HTTP ${r.status}`);
+            const j = await r.json();
+            if (!j.ok) throw new Error("ComfoAir nicht bereit");
+
+            const vent = j.vent || {};
+            setIfNum("vl-ea", vent.exhaustAbsent);
+            setIfNum("vl-el", vent.exhaustLow);
+            setIfNum("vl-em", vent.exhaustMedium);
+            setIfNum("vl-sa", vent.supplyAbsent);
+            setIfNum("vl-sl", vent.supplyLow);
+            setIfNum("vl-sm", vent.supplyMedium);
+            setIfNum("vl-eh", vent.exhaustHigh);
+            setIfNum("vl-sh", vent.supplyHigh);
+
+            const st = j.statusD5 || {};
+            setIfNum("st-preheater", st.preheaterPresent);
+            setIfNum("st-bypass", st.bypassPresent);
+            setIfNum("st-type", st.type);
+            setIfNum("st-size", st.size);
+            setIfNum("st-options", st.options);
+            setIfNum("st-enthalpy", st.enthalpyPresent);
+            setIfNum("st-ewt", st.ewtPresent);
+
+            setIfNum("tempC", j.temps?.comfortC);
+
+            const fl = j.flap || {};
+            if ($("e0-bypass")) {
+                $("e0-bypass").textContent = (fl.bypassPercent === 255) ? "undefiniert (0xFF)" : (fl.bypassPercent ?? "–");
+                $("e0-preheater").textContent = flapStateText(fl.preheaterState);
+                $("e0-bypass-adc").textContent = fl.bypassAdc ?? "–";
+                $("e0-preheater-adc").textContent = fl.preheaterAdc ?? "–";
+            }
+
+            await syncManualConfigFromServer(); // Initial aus config.json
+
+            setManualModeDots(!!j.manualModeActive);
+            renderManualMarkers(j.manual || {});
+            defaultsLoaded = true;
+        }
+
+        $("frm-status").addEventListener("submit", async (ev) => {
+            ev.preventDefault();
+            try {
+                const q = new URLSearchParams({
+                    preheater: $("st-preheater").value,
+                    bypass: $("st-bypass").value,
+                    type: $("st-type").value,
+                    size: $("st-size").value,
+                    options: $("st-options").value,
+                    enthalpy: $("st-enthalpy").value,
+                    ewt: $("st-ewt").value
+                });
+                await postComfo(`/api/comfo/setStatus?${q.toString()}`);
+                await refreshAllFromServer();
+                msg.textContent = "0x00D7 erfolgreich gesendet.";
+            } catch (e) {
+                msg.textContent = `Fehler: ${e.message}`;
+            }
+        });
+
+        $("frm-vent-levels").addEventListener("submit", async (ev) => {
+            ev.preventDefault();
+            try {
+                const q = new URLSearchParams({
+                    exhaustAbsent: $("vl-ea").value,
+                    exhaustLow: $("vl-el").value,
+                    exhaustMedium: $("vl-em").value,
+                    supplyAbsent: $("vl-sa").value,
+                    supplyLow: $("vl-sl").value,
+                    supplyMedium: $("vl-sm").value,
+                    exhaustHigh: $("vl-eh").value,
+                    supplyHigh: $("vl-sh").value
+                });
+                await postComfo(`/api/comfo/setVentilationLevels?${q.toString()}`);
+                await refreshAllFromServer();
+                msg.textContent = "0x00CF erfolgreich gesendet.";
+            } catch (e) {
+                msg.textContent = `Fehler: ${e.message}`;
+            }
+        });
+
+        $("frm-temp").addEventListener("submit", async (ev) => {
+            ev.preventDefault();
+            try {
+                const q = new URLSearchParams({ tempC: String(Number($("tempC").value)) });
+                await postComfo(`/api/comfo/setComfort?${q.toString()}`);
+                await refreshAllFromServer();
+                msg.textContent = "Komforttemperatur gesetzt.";
+            } catch (e) {
+                msg.textContent = `Fehler: ${e.message}`;
+            }
+        });
+
+        async function setManualFlapsAuto() {
+            try {
+                const bypassSel = document.querySelector('input[name="mf-bypass"]:checked');
+                const preSel = document.querySelector('input[name="mf-preheater"]:checked');
+                if (!bypassSel || !preSel) return;
+
+                const delay = Math.max(0, Number($("mf-stop-seconds")?.value ?? 0) || 0);
+                const q = new URLSearchParams({
+                    bypass: bypassSel.value,
+                    preheater: preSel.value,
+                    delaySeconds: String(delay)
+                });
+
+                await postComfo(`/api/comfo/manual/flaps?${q.toString()}`);
+                await refreshAllFromServer();
+                scheduleUiAutoStop(delay, bypassSel.value, preSel.value);
+
+                msg.textContent = delay > 0
+                    ? `Klappen gesetzt (0x0009), Auto-Stop in ${delay}s.`
+                    : "Klappen gesetzt (0x0009), Stop manuell.";
+            } catch (e) {
+                msg.textContent = `Fehler: ${e.message}`;
+            }
+        }
+
+        $("btn-manual-start").addEventListener("click", async () => {
+            try {
+                await postComfo("/api/comfo/manual/start");
+                await refreshAllFromServer();
+                msg.textContent = "Manueller Modus gestartet.";
+            } catch (e) {
+                msg.textContent = `Fehler: ${e.message}`;
+            }
+        });
+
+        $("btn-manual-end").addEventListener("click", async () => {
+            try {
+                await postComfo("/api/comfo/manual/end");
+                clearUiStopTimers();
+                setRadioValue("mf-bypass", "3");
+                setRadioValue("mf-preheater", "3");
+                await refreshAllFromServer();
+                msg.textContent = "Manueller Modus beendet.";
+            } catch (e) {
+                msg.textContent = `Fehler: ${e.message}`;
+            }
+        });
+
+        document.querySelectorAll('input[name="mf-bypass"], input[name="mf-preheater"]')
+            .forEach(rb => rb.addEventListener("change", setManualFlapsAuto));
+
+        $("frm-manual-analog").addEventListener("submit", async (ev) => {
+            ev.preventDefault();
+            try {
+                const supply = Math.max(0, Math.min(100, Number($("ta-supply").value) || 0));
+                const exhaust = Math.max(0, Math.min(100, Number($("ta-exhaust").value) || 0));
+                const postheater = Math.max(0, Math.min(100, Number($("ta-postheater").value) || 0));
+                const delaySeconds = Math.max(0, Math.min(600, Number($("mf-stop-seconds").value) || 0));
+
+                // 1) Gerät setzen
+                await postComfoForm("/api/comfo/manual/analog", {
+                    supply: String(supply),
+                    exhaust: String(exhaust),
+                    postheater: String(postheater)
+                });
+
+                // 2) Persistenz in config.json aktualisieren
+                await postComfoForm("/api/comfo/manual/config", {
+                    delaySeconds: String(delaySeconds),
+                    supply: String(supply),
+                    exhaust: String(exhaust),
+                    postheater: String(postheater)
+                });
+                await refreshAllFromServer();
+
+                msg.textContent = "Analogausgänge gesetzt und in config.json gespeichert.";
+            } catch (e) {
+                msg.textContent = `Fehler: ${e.message}`;
+            }
+        });
+
+        $("btn-manual-stop-seconds-save").addEventListener("click", async () => {
+            try {
+                const delay = Math.max(0, Number($("mf-stop-seconds").value) || 0);
+                const supply = Math.max(0, Math.min(100, Number($("ta-supply").value) || 0));
+                const exhaust = Math.max(0, Math.min(100, Number($("ta-exhaust").value) || 0));
+                const postheater = Math.max(0, Math.min(100, Number($("ta-postheater").value) || 0));
+
+                await postComfoForm("/api/comfo/manual/config", {
+                    delaySeconds: String(delay),
+                    supply: String(supply),
+                    exhaust: String(exhaust),
+                    postheater: String(postheater)
+                });
+                await refreshAllFromServer();
+                msg.textContent = `Auto-Stop Zeit gespeichert: ${delay}s`;
+            } catch (e) {
+                msg.textContent = `Fehler: ${e.message}`;
+            }
+        });
+
+        $("btn-reboot").addEventListener("click", async () => {
+            if (!confirm("Controller wirklich neu starten?")) return;
+            try {
+                await postComfo("/reboot");
+                msg.textContent = "Neustart ausgelöst...";
+            } catch (e) {
+                msg.textContent = `Fehler: ${e.message}`;
+            }
+        });
+
+        setManualModeDots(false);
+        loadDefaultsFromState()
+            .then(refreshAllFromServer)
+            .catch(e => { msg.textContent = `Fehler: ${e.message}`; });
+
+        setInterval(async () => {
+            await refreshAllFromServer();
+        }, 5000);
+
+        // Beim Aufruf/Refresh/Fokus zusätzlich synchronisieren
+        window.addEventListener("pageshow", refreshAllFromServer);
+        window.addEventListener("focus", refreshAllFromServer);
+        document.addEventListener("visibilitychange", () => {
+            if (document.visibilityState === "visible") refreshAllFromServer();
+        });
+    </script>
+</body>
+</html>

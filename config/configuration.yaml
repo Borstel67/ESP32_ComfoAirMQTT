@@ -1,0 +1,13 @@
+homeassistant:
+  packages:
+    comfoair_mqtt: !include /config/custom_components/comfoair_mqtt/package.yaml
+
+lovelace:
+  mode: storage
+  dashboards:
+    comfoair-mqtt:
+      mode: yaml
+      title: ComfoAir MQTT
+      icon: mdi:fan
+      show_in_sidebar: true
+      filename: /config/custom_components/comfoair_mqtt/dashboard.yaml
