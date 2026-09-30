@@ -9,3 +9,4 @@
 - Der Ordner `homeassistant\...` im Repository ist nur ein Platzhalter; maßgeblich sind die Dateien an der tatsächlichen `/config`-Position in Home Assistant.
 - Achte darauf, dass das Symbol der Manual-Mode-Entität in Home Assistant verwendet wird, anstatt sich auf den Text zu konzentrieren.
 - Binde keine unnötigen Home-Assistant-Skripte ein, wenn sie nicht benötigt werden.
+- Beim MQTT-Befehl für Level soll der Wert zuerst persistent gespeichert und erst danach per RS232 geschrieben werden.

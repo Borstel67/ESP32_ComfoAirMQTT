@@ -2,11 +2,11 @@
 
 param(
    [switch]$Flash,
-   [string]$Port = "COM4"
+   [string]$Port = "COM3"
 )
 
 $tool    = "$env:LOCALAPPDATA\Arduino15\packages\esp32\tools\mklittlefs\4.0.2-db0513a\mklittlefs.exe"
-$esptool = "$env:LOCALAPPDATA\Arduino15\packages\esp32\tools\esptool_py\5.1.0\esptool.exe"
+$esptool = "$env:LOCALAPPDATA\Arduino15\packages\esp32\tools\esptool_py\5.2.0\esptool.exe"
 $siz     = "0x60000"   # Größe aus partitions.csv
 $offset  = "0x3A0000"  # LittleFS-Offset aus partitions.csv
 $root = Split-Path -Parent $PSScriptRoot

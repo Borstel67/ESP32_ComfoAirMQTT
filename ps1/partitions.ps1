@@ -17,5 +17,5 @@ if (-not $gen) { throw "gen_esp32part.py nicht gefunden (ESP32 Boards-Paket inst
 python "$gen" "$csvPath" "$binPath"
 
 # 3) Flashen (Partitionstabelle liegt bei 0x8000)
-$esptool = "$env:LOCALAPPDATA\Arduino15\packages\esp32\tools\esptool_py\5.1.0\esptool.exe"
-& $esptool --chip esp32 --port COM4 --baud 921600 write-flash 0x8000 "$binPath"
+$esptool = "$env:LOCALAPPDATA\Arduino15\packages\esp32\tools\esptool_py\5.2.0\esptool.exe"
+& $esptool --chip esp32 --port COM3 --baud 921600 write-flash 0x8000 "$binPath"

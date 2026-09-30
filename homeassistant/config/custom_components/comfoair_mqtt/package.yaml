@@ -1,0 +1,474 @@
+﻿mqtt:
+  sensor:
+    - name: "Online"
+      default_entity_id: sensor.comfoair_online
+      unique_id: comfoair_online
+      state_topic: &t_system_json !secret comfoair_topic_status_system_json
+      value_template: "{{ value_json.online }}"
+      icon: mdi:wifi
+      device: &comfoair_device
+        identifiers:
+          - "comfoair_mqtt_device"
+        name: "MQTT"
+        manufacturer: "Borstel67"
+        model: "ComfoAirMQTTESP"
+
+    - name: "Zuluft "
+      default_entity_id: sensor.comfoair_supply_percent
+      unique_id: comfoair_supply_percent
+      state_topic: &t_fan !secret comfoair_topic_status_fan
+      value_template: "{{ value_json.supplyPct }}"
+      unit_of_measurement: "%"
+      device: *comfoair_device
+
+    - name: "Abluft "
+      default_entity_id: sensor.comfoair_exhaust_percent
+      unique_id: comfoair_exhaust_percent
+      state_topic: *t_fan
+      value_template: "{{ value_json.exhaustPct }}"
+      unit_of_measurement: "%"
+      device: *comfoair_device
+
+    - name: "Zuluft Drehzahl"
+      default_entity_id: sensor.comfoair_supply_rpm
+      unique_id: comfoair_supply_rpm
+      state_topic: *t_fan
+      value_template: "{{ value_json.supplyRpm }}"
+      unit_of_measurement: "rpm"
+      device: *comfoair_device
+
+    - name: "Abluft Drehzahl"
+      default_entity_id: sensor.comfoair_exhaust_rpm
+      unique_id: comfoair_exhaust_rpm
+      state_topic: *t_fan
+      value_template: "{{ value_json.exhaustRpm }}"
+      unit_of_measurement: "rpm"
+      device: *comfoair_device
+
+    - name: "Außenluft "
+      default_entity_id: sensor.comfoair_t1
+      unique_id: comfoair_t1
+      state_topic: &t_temps !secret comfoair_topic_status_temps
+      value_template: "{{ value_json.t1C }}"
+      unit_of_measurement: "°C"
+      device: *comfoair_device
+
+    - name: "Zuluft"
+      default_entity_id: sensor.comfoair_t2
+      unique_id: comfoair_t2
+      state_topic: *t_temps
+      value_template: "{{ value_json.t2C }}"
+      unit_of_measurement: "°C"
+      device: *comfoair_device
+
+    - name: "Abluft"
+      default_entity_id: sensor.comfoair_t3
+      unique_id: comfoair_t3
+      state_topic: *t_temps
+      value_template: "{{ value_json.t3C }}"
+      unit_of_measurement: "°C"
+      device: *comfoair_device
+
+    - name: "Fortluft"
+      default_entity_id: sensor.comfoair_t4
+      unique_id: comfoair_t4
+      state_topic: *t_temps
+      value_template: "{{ value_json.t4C }}"
+      unit_of_measurement: "°C"
+      device: *comfoair_device
+
+    - name: "Komforttemperatur"
+      default_entity_id: sensor.comfoair_comfort_temp
+      unique_id: comfoair_comfort_temp
+      state_topic: *t_temps
+      value_template: "{{ value_json.comfortC | default(20, true) }}"
+      unit_of_measurement: "°C"
+      device: *comfoair_device
+
+    - name: "Aktuelle Lüftungsstufe"
+      default_entity_id: sensor.comfoair_vent_current_level
+      unique_id: comfoair_vent_current_level
+      state_topic: &t_vent !secret comfoair_topic_status_vent
+      value_template: "{{ value_json.current }}"
+      device: *comfoair_device
+
+    - name: "Bypass "
+      default_entity_id: sensor.comfoair_bypass_percent
+      unique_id: comfoair_bypass_percent
+      state_topic: &t_flap !secret comfoair_topic_status_flap
+      value_template: "{{ value_json.bypassPercent }}"
+      unit_of_measurement: "%"
+      device: *comfoair_device
+
+    - name: "Vorheizung Status"
+      default_entity_id: sensor.comfoair_preheater_state
+      unique_id: comfoair_preheater_state
+      state_topic: *t_flap
+      value_template: "{{ value_json.preheaterState }}"
+      device: *comfoair_device
+
+    - name: "RS232 Modus"
+      default_entity_id: sensor.comfoair_rs232_mode
+      unique_id: comfoair_rs232_mode
+      state_topic: &t_meta !secret comfoair_topic_status_meta
+      value_template: "{{ value_json.rs232Mode | default(0, true) | string }}"
+      device: *comfoair_device
+
+    - name: "Letzter Befehl"
+      default_entity_id: sensor.comfoair_last_command
+      unique_id: comfoair_last_command
+      state_topic: &t_cmd_status !secret comfoair_topic_status_command_bereich
+      value_template: "{{ value_json.cmd }}"
+      device: *comfoair_device
+
+    - name: "Letzter Befehl OK"
+      default_entity_id: sensor.comfoair_last_command_ok
+      unique_id: comfoair_last_command_ok
+      state_topic: *t_cmd_status
+      value_template: "{{ value_json.ok }}"
+      device: *comfoair_device
+
+    - name: "Anlagenkonfiguration Typ"
+      default_entity_id: sensor.comfoair_anlagenconf_type
+      unique_id: comfoair_anlagenconf_type
+      state_topic: &t_anlagenconf !secret comfoair_topic_status_anlagenconf
+      value_template: "{{ value_json.type }}"
+      device: *comfoair_device
+
+    - name: "Anlagenkonfiguration Größe"
+      default_entity_id: sensor.comfoair_anlagenconf_size
+      unique_id: comfoair_anlagenconf_size
+      state_topic: *t_anlagenconf
+      value_template: "{{ value_json.size }}"
+      device: *comfoair_device
+
+    - name: "Anlagenkonfiguration Optionen"
+      default_entity_id: sensor.comfoair_anlagenconf_options
+      unique_id: comfoair_anlagenconf_options
+      state_topic: *t_anlagenconf
+      value_template: "{{ value_json.options }}"
+      device: *comfoair_device
+
+    - name: "Anlagenkonfiguration Vorheizung vorhanden"
+      default_entity_id: sensor.comfoair_anlagenconf_preheater_present
+      unique_id: comfoair_anlagenconf_preheater_present
+      state_topic: *t_anlagenconf
+      value_template: "{{ value_json.preheaterPresent }}"
+      device: *comfoair_device
+
+    - name: "Anlagenkonfiguration Bypass vorhanden"
+      default_entity_id: sensor.comfoair_anlagenconf_bypass_present
+      unique_id: comfoair_anlagenconf_bypass_present
+      state_topic: *t_anlagenconf
+      value_template: "{{ value_json.bypassPresent }}"
+      device: *comfoair_device
+
+    - name: "Anlagenkonfiguration Enthalpie vorhanden"
+      default_entity_id: sensor.comfoair_anlagenconf_enthalpy_present
+      unique_id: comfoair_anlagenconf_enthalpy_present
+      state_topic: *t_anlagenconf
+      value_template: "{{ value_json.enthalpyPresent }}"
+      device: *comfoair_device
+
+    - name: "Anlagenkonfiguration EWT vorhanden"
+      default_entity_id: sensor.comfoair_anlagenconf_ewt_present
+      unique_id: comfoair_anlagenconf_ewt_present
+      state_topic: *t_anlagenconf
+      value_template: "{{ value_json.ewtPresent }}"
+      device: *comfoair_device
+
+    - name: "Vorheizung Klappenstatus"
+      default_entity_id: sensor.comfoair_preheat_flap_status
+      unique_id: comfoair_preheat_flap_status
+      state_topic: &t_preheat !secret comfoair_topic_status_preheat
+      value_template: "{{ value_json.flapStatus }}"
+      device: *comfoair_device
+
+    - name: "Vorheizung Frost aktiv"
+      default_entity_id: sensor.comfoair_preheat_frost_active
+      unique_id: comfoair_preheat_frost_active
+      state_topic: *t_preheat
+      value_template: "{{ value_json.frostActive }}"
+      device: *comfoair_device
+
+    - name: "Vorheizung Ein"
+      default_entity_id: sensor.comfoair_preheat_on
+      unique_id: comfoair_preheat_on
+      state_topic: *t_preheat
+      value_template: "{{ value_json.preheatOn }}"
+      device: *comfoair_device
+
+    - name: "Vorheizung Frost Minuten"
+      default_entity_id: sensor.comfoair_preheat_frost_mins
+      unique_id: comfoair_preheat_frost_mins
+      state_topic: *t_preheat
+      value_template: "{{ value_json.frostMins }}"
+      device: *comfoair_device
+
+    - name: "Vorheizung Frost Sicherheit"
+      default_entity_id: sensor.comfoair_preheat_frost_safety
+      unique_id: comfoair_preheat_frost_safety
+      state_topic: *t_preheat
+      value_template: "{{ value_json.frostSafety }}"
+      device: *comfoair_device
+
+    - name: "Verzögerung Bad Ein"
+      default_entity_id: sensor.comfoair_delay_bath_on
+      unique_id: comfoair_delay_bath_on
+      state_topic: &t_delay !secret comfoair_topic_status_delay
+      value_template: "{{ value_json.bathOnDelay }}"
+      device: *comfoair_device
+
+    - name: "Verzögerung Bad Aus"
+      default_entity_id: sensor.comfoair_delay_bath_off
+      unique_id: comfoair_delay_bath_off
+      state_topic: *t_delay
+      value_template: "{{ value_json.bathOffDelay }}"
+      device: *comfoair_device
+
+    - name: "Verzögerung Boost Dauer"
+      default_entity_id: sensor.comfoair_delay_boost_duration
+      unique_id: comfoair_delay_boost_duration
+      state_topic: *t_delay
+      value_template: "{{ value_json.boostDuration }}"
+      device: *comfoair_device
+
+    - name: "Verzögerung Filter Wochen"
+      default_entity_id: sensor.comfoair_delay_filter_weeks
+      unique_id: comfoair_delay_filter_weeks
+      state_topic: *t_delay
+      value_template: "{{ value_json.filterWeeks }}"
+      device: *comfoair_device
+
+    - name: "Verzögerung Haube Aus"
+      default_entity_id: sensor.comfoair_delay_hood_off
+      unique_id: comfoair_delay_hood_off
+      state_topic: *t_delay
+      value_template: "{{ value_json.hoodOffDelay }}"
+      device: *comfoair_device
+
+    - name: "Analogkonfiguration Präsenz-Flags"
+      default_entity_id: sensor.comfoair_analogcfg_present_flags
+      unique_id: comfoair_analogcfg_present_flags
+      state_topic: &t_analogcfg !secret comfoair_topic_status_analogconfig
+      value_template: "{{ value_json.presentFlags | default(0, true) }}"
+      device: *comfoair_device
+
+    - name: "Analogkonfiguration Steuer-Flags"
+      default_entity_id: sensor.comfoair_analogcfg_control_flags
+      unique_id: comfoair_analogcfg_control_flags
+      state_topic: *t_analogcfg
+      value_template: "{{ value_json.controlFlags | default(0, true) }}"
+      device: *comfoair_device
+
+    - name: "Analogkonfiguration Polaritäts-Flags"
+      default_entity_id: sensor.comfoair_analogcfg_polarity_flags
+      unique_id: comfoair_analogcfg_polarity_flags
+      state_topic: *t_analogcfg
+      value_template: "{{ value_json.polarityFlags | default(0, true) }}"
+      device: *comfoair_device
+
+    - name: "Analogkonfiguration A1 Sollwert"
+      default_entity_id: sensor.comfoair_analogcfg_a1_setpoint
+      unique_id: comfoair_analogcfg_a1_setpoint
+      state_topic: *t_analogcfg
+      value_template: "{{ value_json.a1Setpoint | default(0, true) }}"
+      device: *comfoair_device
+
+    - name: "Analogkonfiguration A2 Sollwert"
+      default_entity_id: sensor.comfoair_analogcfg_a2_setpoint
+      unique_id: comfoair_analogcfg_a2_setpoint
+      state_topic: *t_analogcfg
+      value_template: "{{ value_json.a2Setpoint | default(0, true) }}"
+      device: *comfoair_device
+
+    - name: "Analogkonfiguration A3 Sollwert"
+      default_entity_id: sensor.comfoair_analogcfg_a3_setpoint
+      unique_id: comfoair_analogcfg_a3_setpoint
+      state_topic: *t_analogcfg
+      value_template: "{{ value_json.a3Setpoint | default(0, true) }}"
+      device: *comfoair_device
+
+    - name: "Analogkonfiguration A4 Sollwert"
+      default_entity_id: sensor.comfoair_analogcfg_a4_setpoint
+      unique_id: comfoair_analogcfg_a4_setpoint
+      state_topic: *t_analogcfg
+      value_template: "{{ value_json.a4Setpoint | default(0, true) }}"
+      device: *comfoair_device
+
+    - name: "Analogkonfiguration Priorität"
+      default_entity_id: sensor.comfoair_analogcfg_priority
+      unique_id: comfoair_analogcfg_priority
+      state_topic: *t_analogcfg
+      value_template: "{{ value_json.priority | default(0, true) }}"
+      device: *comfoair_device
+
+    - name: "Manuell angefordert Bypass"
+      default_entity_id: sensor.comfoair_manual_requested_bypass
+      unique_id: comfoair_manual_requested_bypass
+      state_topic: &t_manual !secret comfoair_topic_status_manual
+      value_template: "{{ value_json.requestedBypassText | default('stop', true) }}"
+      device: *comfoair_device
+
+    - name: "Manuell angefordert Vorheizung"
+      default_entity_id: sensor.comfoair_manual_requested_preheater
+      unique_id: comfoair_manual_requested_preheater
+      state_topic: *t_manual
+      value_template: "{{ value_json.requestedPreheaterText | default('stop', true) }}"
+      device: *comfoair_device
+
+  binary_sensor:
+    - name: "Manueller Modus aktiv"
+      default_entity_id: binary_sensor.comfoair_manual_mode_active
+      unique_id: comfoair_manual_mode_active
+      state_topic: *t_manual
+      value_template: "{{ 'ON' if (value_json is defined and (value_json.active | default(false))) else 'OFF' }}"
+      payload_on: "ON"
+      payload_off: "OFF"
+      device: *comfoair_device
+
+    - name: "Bypass Markierung Offen"
+      default_entity_id: binary_sensor.comfoair_bypass_marker_open
+      unique_id: comfoair_bypass_marker_open
+      state_topic: *t_manual
+      value_template: "{{ 'ON' if (value_json is defined and (value_json.requestedBypassOpen | default(false))) else 'OFF' }}"
+      payload_on: "ON"
+      payload_off: "OFF"
+      device: *comfoair_device
+
+    - name: "Bypass Markierung Zu"
+      default_entity_id: binary_sensor.comfoair_bypass_marker_closed
+      unique_id: comfoair_bypass_marker_closed
+      state_topic: *t_manual
+      value_template: "{{ 'ON' if (value_json is defined and (value_json.requestedBypassClosed | default(false))) else 'OFF' }}"
+      payload_on: "ON"
+      payload_off: "OFF"
+      device: *comfoair_device
+
+    - name: "Vorheizung Markierung Offen"
+      default_entity_id: binary_sensor.comfoair_preheater_marker_open
+      unique_id: comfoair_preheater_marker_open
+      state_topic: *t_manual
+      value_template: "{{ 'ON' if (value_json is defined and (value_json.requestedPreheaterOpen | default(false))) else 'OFF' }}"
+      payload_on: "ON"
+      payload_off: "OFF"
+      device: *comfoair_device
+
+    - name: "Vorheizung Markierung Zu"
+      default_entity_id: binary_sensor.comfoair_preheater_marker_closed
+      unique_id: comfoair_preheater_marker_closed
+      state_topic: *t_manual
+      value_template: "{{ 'ON' if (value_json is defined and (value_json.requestedPreheaterClosed | default(false))) else 'OFF' }}"
+      payload_on: "ON"
+      payload_off: "OFF"
+      device: *comfoair_device
+
+  select:
+    - name: "Manuell Bypass Soll"
+      default_entity_id: select.comfoair_manual_bypass_setpoint
+      unique_id: comfoair_manual_bypass_setpoint
+      command_topic: "comfoair/cmd/manual/flaps/bereich"
+      command_template: >
+        {% set m = {'Zu': 0, 'Offen': 1, 'Stop': 3} %}
+        {% set ph = m.get(states('select.comfoair_manual_preheater_setpoint'), 3) %}
+        {"bypass": {{ m.get(value, 3) }}, "preheater": {{ ph }}, "delaySeconds": {{ states('number.comfoair_manual_flaps_autostop_seconds') | int(0) }}}
+      state_topic: *t_manual
+      value_template: >
+        {% if value_json is not defined %}Stop{% else %}
+        {% set v = (value_json.requestedBypassText | default('unbekannt')) | lower %}
+        {{ 'Zu' if v == 'zu' else 'Offen' if v == 'offen' else 'Stop' }}
+        {% endif %}
+      options: ["Zu", "Offen", "Stop"]
+      device: *comfoair_device
+
+    - name: "Manuell Vorheizung Soll"
+      default_entity_id: select.comfoair_manual_preheater_setpoint
+      unique_id: comfoair_manual_preheater_setpoint
+      command_topic: "comfoair/cmd/manual/flaps/bereich"
+      command_template: >
+        {% set m = {'Zu': 0, 'Offen': 1, 'Stop': 3} %}
+        {% set by = m.get(states('select.comfoair_manual_bypass_setpoint'), 3) %}
+        {"bypass": {{ by }}, "preheater": {{ m.get(value, 3) }}, "delaySeconds": {{ states('number.comfoair_manual_flaps_autostop_seconds') | int(0) }}}
+      state_topic: *t_manual
+      value_template: >
+        {% if value_json is not defined %}Stop{% else %}
+        {% set v = (value_json.requestedPreheaterText | default('unbekannt')) | lower %}
+        {{ 'Zu' if v == 'zu' else 'Offen' if v == 'offen' else 'Stop' }}
+        {% endif %}
+      options: ["Zu", "Offen", "Stop"]
+      device: *comfoair_device
+
+  number:
+    - name: "Komforttemperatur Soll"
+      default_entity_id: number.comfoair_set_comfort_temp
+      unique_id: comfoair_set_comfort_temp
+      command_topic: !secret comfoair_topic_cmd_comfort_bereich
+      command_template: '{"tempC": {{ value | round(0) | int }}}'
+      state_topic: *t_temps
+      value_template: "{{ value_json.comfortC | default(20) }}"
+      min: 10
+      max: 30
+      step: 1
+      mode: slider
+      unit_of_measurement: "°C"
+      device: *comfoair_device
+
+    - name: "Manual Klappen Auto-Stop (s)"
+      default_entity_id: number.comfoair_manual_flaps_autostop_seconds
+      unique_id: comfoair_manual_flaps_autostop_seconds
+      command_topic: "comfoair/cmd/manual/flaps/bereich"
+      command_template: >
+        {% set m = {'Zu': 0, 'Offen': 1, 'Stop': 3} %}
+        {"bypass": {{ m.get(states('select.comfoair_manual_bypass_setpoint'), 3) }}, "preheater": {{ m.get(states('select.comfoair_manual_preheater_setpoint'), 3) }}, "delaySeconds": {{ value | int(0) }}}
+      state_topic: *t_manual
+      value_template: "{{ value_json.autoStopDelaySec | default(0) }}"
+      min: 0
+      max: 600
+      step: 1
+      mode: box
+      unit_of_measurement: "s"
+      device: *comfoair_device
+
+    - name: "Manuell Analog Zuluft"
+      default_entity_id: number.comfoair_manual_analog_supply
+      unique_id: comfoair_manual_analog_supply
+      command_topic: "comfoair/cmd/manual/analog/bereich"
+      command_template: >
+        {"supply": {{ value | int }}, "exhaust": {{ states('number.comfoair_manual_analog_exhaust') | int(50) }}, "postheater": {{ states('number.comfoair_manual_analog_postheater') | int(0) }}}
+      state_topic: *t_manual
+      value_template: "{{ value_json.analogCmd.supply | default(0, true) }}"
+      min: 0
+      max: 100
+      step: 1
+      mode: slider
+      unit_of_measurement: "%"
+      device: *comfoair_device
+
+    - name: "Manuell Analog Abluft"
+      default_entity_id: number.comfoair_manual_analog_exhaust
+      unique_id: comfoair_manual_analog_exhaust
+      command_topic: "comfoair/cmd/manual/analog/bereich"
+      command_template: >
+        {"supply": {{ states('number.comfoair_manual_analog_supply') | int(50) }}, "exhaust": {{ value | int }}, "postheater": {{ states('number.comfoair_manual_analog_postheater') | int(0) }}}
+      state_topic: *t_manual
+      value_template: "{{ value_json.analogCmd.exhaust | default(0, true) }}"
+      min: 0
+      max: 100
+      step: 1
+      mode: slider
+      unit_of_measurement: "%"
+      device: *comfoair_device
+
+    - name: "Manuell Analog Nachheizung"
+      default_entity_id: number.comfoair_manual_analog_postheater
+      unique_id: comfoair_manual_analog_postheater
+      command_topic: "comfoair/cmd/manual/analog/bereich"
+      command_template: >
+        {"supply": {{ states('number.comfoair_manual_analog_supply') | int(50) }}, "exhaust": {{ states('number.comfoair_manual_analog_exhaust') | int(50) }}, "postheater": {{ value | int }}}
+      state_topic: *t_manual
+      value_template: "{{ value_json.analogCmd.postheater | default(0, true) }}"
+      min: 0
+      max: 100
+      step: 1
+      mode: slider
+      unit_of_measurement: "%"

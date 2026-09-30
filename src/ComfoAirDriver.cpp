@@ -96,6 +96,52 @@ namespace {
         v["supplyHigh"] = clampCfg(sh, 0, 100);
         return saveCfgDoc(doc);
     }
+
+    static bool tryParseIntLoose(const String& in, const char* key, int& out) {
+        String m = in;
+        m.trim();
+
+        // 1) JSON-Objekt oder JSON-Skalar
+        {
+            StaticJsonDocument<128> d;
+            if (!deserializeJson(d, m)) {
+                if (d.is<JsonObject>()) {
+                    out = d[key] | -32768;
+                    if (out != -32768) return true;
+                } else if (d.is<int>()) {
+                    out = d.as<int>();
+                    return true;
+                }
+            }
+        }
+
+        // 2) Fragment: "key": 1  -> zu {"key":1} wrappen
+        if (m.indexOf(':') >= 0 && m.indexOf('{') < 0) {
+            StaticJsonDocument<128> d;
+            String wrapped = "{" + m + "}";
+            if (!deserializeJson(d, wrapped)) {
+                out = d[key] | -32768;
+                if (out != -32768) return true;
+            }
+        }
+
+        // 3) Reine Zahl
+        char* endPtr = nullptr;
+        long v = strtol(m.c_str(), &endPtr, 10);
+        if (endPtr && *endPtr == '\0') {
+            out = (int)v;
+            return true;
+        }
+
+        return false;
+    }
+    static String normalizeTopicPrefix(String p) {
+        p.trim();
+        while (p.startsWith("/")) p.remove(0, 1);
+        while (p.endsWith("/")) p.remove(p.length() - 1, 1);
+        if (p.isEmpty()) p = "comfoair";
+        return p;
+    }
 }
 
 static String toHex(const std::vector<uint8_t>& v) {
@@ -385,8 +431,8 @@ static bool parseVersionVector(const std::vector<uint8_t>& resp, ComfoVersionInf
 
 	// Byte[4..13] = Gerätename (10 ASCII-Zeichen)
 	for (size_t i = 0; i < 10; ++i) {
-		info.deviceName[i] = static_cast<char>(resp[3 + i]);
-	}
+    info.deviceName[i] = static_cast<char>(resp[2 + i]);
+}
 	info.deviceName[10] = '\0';
 
 	return true;
@@ -428,8 +474,8 @@ bool ComfoAirDriver::getConnectorBoardVersionInfo(ComfoConnectorVersionInfo& inf
 
 	// Gerätename aus Byte[3..12]
 	for (size_t i = 0; i < 10; ++i) {
-		info.deviceName[i] = static_cast<char>(resp[2 + i]);
-	}
+    info.deviceName[i] = static_cast<char>(resp[2 + i]);
+}
 	info.deviceName[10] = '\0';
 
 	uint8_t ease = resp[12];      // Byte[13] Version CC-Ease
@@ -1001,11 +1047,17 @@ void ComfoAirDriver::mqttThunk(char* topic, uint8_t* payload, unsigned int lengt
 }
 
 void ComfoAirDriver::onMqttMessage(char* topic, uint8_t* payload, unsigned int length) {
-    String t(topic);
+    String t(topic ? topic : "");
+    t.trim();
+    while (t.endsWith("/")) t.remove(t.length() - 1);
+
     String msg; msg.reserve(length + 1);
     for (unsigned i = 0; i < length; i++) msg += (char)payload[i];
+    msg.trim();
 
     const String b = String(_mqttCfg.topicPrefix);
+
+    AWM_LOGI("MQTT RX topic='%s' payload='%s'", t.c_str(), msg.c_str());
 
     auto publishCmdResult = [&](const String& cmd, bool ok, const String& err = "") {
         StaticJsonDocument<192> d;
@@ -1016,45 +1068,114 @@ void ComfoAirDriver::onMqttMessage(char* topic, uint8_t* payload, unsigned int l
         _mqtt.publish((b + "/status/command/bereich").c_str(), out.c_str(), true);
     };
 
+    auto parseJsonObj = [&](auto& d) -> bool {
+        if (deserializeJson(d, msg)) return false;
+        return d.template is<JsonObject>();
+    };
+
+    // -------------------------------------------------------------------------
+    // level (wie HTML-API: 0..4)
+    // -------------------------------------------------------------------------
     if (t == b + "/cmd/level/bereich") {
-        StaticJsonDocument<128> d;
-        if (deserializeJson(d, msg)) { publishCmdResult("level", false, "invalid json"); return; }
-        int level = d["level"] | -1;
-        bool ok = (level >= 0 && level <= 4) ? setLevel((uint8_t)level) : false;
-        publishCmdResult("level", ok, ok ? "" : "level 0..4");
-        return;
-    }
+        int level = -1;
 
-    if (t == b + "/cmd/comfort/bereich" ||
-        t == b + "/cmd/comfort" ||
-        t == b + "/cmd/comfort/json") {
-
+        // akzeptiert {"level":2}, "level":2, 2
         StaticJsonDocument<128> d;
-        if (deserializeJson(d, msg)) {
-            publishCmdResult("comfort", false, "invalid json");
+        if (!deserializeJson(d, msg)) {
+            if (d.is<JsonObject>()) level = d["level"] | -1;
+            else if (d.is<int>())   level = d.as<int>();
+        }
+        if (level < 0 && !tryParseIntLoose(msg, "level", level)) {
+            level = msg.toInt();
+        }
+
+        if (level < 0 || level > 4) {
+            publishCmdResult("level", false, "level must be 0..4");
             return;
         }
 
-        int tempC = d["comfortC"] | d["tempC"] | d["value"] | -100;
-        bool ok = (tempC >= -40 && tempC <= 100) ? setComfortTemperatureC((int8_t)tempC) : false;
+        // Projektrichtlinie: zuerst persistieren, dann RS232 schreiben
+        if (!persistLevelToConfig(level)) {
+            publishCmdResult("level", false, "persist failed");
+            return;
+        }
 
-        publishCmdResult("comfort", ok, ok ? "" : "tempC out of range");
+        bool ok = setLevel((uint8_t)level);
+        if (!ok) { delay(50); ok = setLevel((uint8_t)level); }
+
+        if (ok) {
+            // Sofort lokalen Zustand setzen, nicht direkt durch pollAll überschreiben
+            _vent.currentLevel = static_cast<uint8_t>(level);
+            _ventValid = true;
+            mqttPublishState();
+        }
+
+        publishCmdResult("level", ok, ok ? "" : "setLevel failed");
         return;
     }
 
+    // -------------------------------------------------------------------------
+    // comfort (wie HTML-API: clamp -40..100)
+    // -------------------------------------------------------------------------
+    if (t == b + "/cmd/comfort/bereich" || t == b + "/cmd/comfort" || t == b + "/cmd/comfort/json") {
+        int tempC = INT_MIN;
+
+        StaticJsonDocument<128> d;
+        if (!deserializeJson(d, msg)) {
+            if (d.is<JsonObject>()) {
+                tempC = d["tempC"] | d["comfortC"] | d["value"] | INT_MIN;
+            } else if (d.is<int>()) {
+                tempC = d.as<int>();
+            }
+        }
+
+        if (tempC == INT_MIN) {
+            if (!tryParseIntLoose(msg, "tempC", tempC) &&
+                !tryParseIntLoose(msg, "comfortC", tempC) &&
+                !tryParseIntLoose(msg, "value", tempC)) {
+                tempC = msg.toInt();
+            }
+        }
+
+        // HTML-Verhalten: clamp statt reject
+        if (tempC < -40) tempC = -40;
+        if (tempC > 100) tempC = 100;
+
+        if (!persistComfortToConfig(tempC)) {
+            publishCmdResult("comfort", false, "persist failed");
+            return;
+        }
+
+        bool ok = setComfortTemperatureC((int8_t)tempC);
+        if (ok) {
+            pollAll(0, true);
+            mqttPublishState();
+        }
+        publishCmdResult("comfort", ok, ok ? "" : "setComfort failed");
+        return;
+    }
+
+    // -------------------------------------------------------------------------
+    // rs232Mode (0..4)
+    // -------------------------------------------------------------------------
     if (t == b + "/cmd/rs232Mode/bereich") {
         StaticJsonDocument<128> d;
-        if (deserializeJson(d, msg)) { publishCmdResult("rs232Mode", false, "invalid json"); return; }
+        if (!parseJsonObj(d)) { publishCmdResult("rs232Mode", false, "invalid json object"); return; }
+
         int mode = d["mode"] | -1;
         std::vector<uint8_t> resp;
         bool ok = (mode >= 0 && mode <= 4) ? setRs232Mode((uint8_t)mode, resp) : false;
-        publishCmdResult("rs232Mode", ok, ok ? "" : "mode 0..4");
+
+        publishCmdResult("rs232Mode", ok, ok ? "" : "mode must be 0..4");
         return;
     }
 
+    // -------------------------------------------------------------------------
+    // manual start/end
+    // -------------------------------------------------------------------------
     if (t == b + "/cmd/manual/bereich") {
         StaticJsonDocument<192> d;
-        if (deserializeJson(d, msg)) { publishCmdResult("manual", false, "invalid json"); return; }
+        if (!parseJsonObj(d)) { publishCmdResult("manual", false, "invalid json object"); return; }
 
         bool ok = false;
         if (d.containsKey("active")) {
@@ -1068,70 +1189,180 @@ void ComfoAirDriver::onMqttMessage(char* topic, uint8_t* payload, unsigned int l
             else { publishCmdResult("manual", false, "use active:true/false or action:start/end"); return; }
         }
 
+        if (ok) mqttPublishState();
         publishCmdResult("manual", ok);
         return;
     }
 
+    // -------------------------------------------------------------------------
+    // manual flaps (bypass/preheater: 0/1/3, delay 0..600)
+    // -------------------------------------------------------------------------
     if (t == b + "/cmd/manual/flaps/bereich") {
-        StaticJsonDocument<192> d;
-        if (deserializeJson(d, msg)) { publishCmdResult("manual/flaps", false, "invalid json"); return; }
-        int by = d["bypass"] | 3;
-        int ph = d["preheater"] | 3;
+        StaticJsonDocument<256> d;
+        if (!parseJsonObj(d)) { publishCmdResult("manual/flaps", false, "invalid json object"); return; }
+
+        if (!d.containsKey("bypass") || !d.containsKey("preheater")) {
+            publishCmdResult("manual/flaps", false, "missing bypass/preheater");
+            return;
+        }
+
+        int by = d["bypass"] | -1;
+        int ph = d["preheater"] | -1;
         int ds = d["delaySeconds"] | 0;
+
+        auto validFlap = [](int v) { return v == 0 || v == 1 || v == 3; };
+        if (!validFlap(by) || !validFlap(ph)) {
+            publishCmdResult("manual/flaps", false, "bypass/preheater must be 0,1,3");
+            return;
+        }
+        if (ds < 0 || ds > 600) {
+            publishCmdResult("manual/flaps", false, "delaySeconds must be 0..600");
+            return;
+        }
+
         bool ok = setManualFlapsWithAutoStop((uint8_t)by, (uint8_t)ph, (uint16_t)ds);
         if (ok) {
-            persistManualDelayToConfig(ds); // HA/MQTT -> config.json
-            mqttPublishState();             // MQTT sofort aus Runtime/Config spiegeln
-         }
-         publishCmdResult("manual/flaps", ok);
-         return;
-     }
+            persistManualDelayToConfig(ds);
+            mqttPublishState();
+        }
+        publishCmdResult("manual/flaps", ok, ok ? "" : "setManualFlapsWithAutoStop failed");
+        return;
+    }
 
+    // -------------------------------------------------------------------------
+    // manual analog (0..100)
+    // -------------------------------------------------------------------------
     if (t == b + "/cmd/manual/analog/bereich") {
-         StaticJsonDocument<192> d;
-         if (deserializeJson(d, msg)) { publishCmdResult("manual/analog", false, "invalid json"); return; }
- 
-         int s = d["supply"] | 0, e = d["exhaust"] | 0, p = d["postheater"] | 0;
-         bool ok = setManualAnalog((uint8_t)s, (uint8_t)e, (uint8_t)p);
- 
-         if (ok) {
-    if (!persistManualAnalogToConfig(s, e, p)) {
-        AWM_LOGW("Konnte manualAnalog* nicht in config.json speichern");
+        StaticJsonDocument<256> d;
+        if (!parseJsonObj(d)) { publishCmdResult("manual/analog", false, "invalid json object"); return; }
+
+        if (!d.containsKey("supply") || !d.containsKey("exhaust") || !d.containsKey("postheater")) {
+            publishCmdResult("manual/analog", false, "missing supply/exhaust/postheater");
+            return;
+        }
+
+        int s = d["supply"] | -1;
+        int e = d["exhaust"] | -1;
+        int p = d["postheater"] | -1;
+
+        auto inRange100 = [](int v) { return v >= 0 && v <= 100; };
+        if (!inRange100(s) || !inRange100(e) || !inRange100(p)) {
+            publishCmdResult("manual/analog", false, "supply/exhaust/postheater must be 0..100");
+            return;
+        }
+
+        bool ok = setManualAnalog((uint8_t)s, (uint8_t)e, (uint8_t)p);
+        if (ok) {
+            persistManualAnalogToConfig(s, e, p);
+            pollAll(0, true);
+            mqttPublishState();
+        }
+        publishCmdResult("manual/analog", ok, ok ? "" : "setManualAnalog failed");
+        return;
     }
-    pollAll(0, true);
-    mqttPublishState();
-}
 
-publishCmdResult("manual/analog", ok);
-return;
-     }
-
+    // -------------------------------------------------------------------------
+    // status (Pflichtfelder + Range wie HTML-API)
+    // -------------------------------------------------------------------------
     if (t == b + "/cmd/status/bereich") {
-        StaticJsonDocument<256> d;
-        if (deserializeJson(d, msg)) { publishCmdResult("status", false, "invalid json"); return; }
+        StaticJsonDocument<384> d;
+        if (!parseJsonObj(d)) { publishCmdResult("status", false, "invalid json object"); return; }
+
+        const char* required[] = { "preheater", "bypass", "type", "size", "options", "enthalpy", "ewt" };
+        for (auto key : required) {
+            if (!d.containsKey(key)) {
+                publishCmdResult("status", false, String("missing arg: ") + key);
+                return;
+            }
+        }
+
+        int preheater = d["preheater"] | -1;
+        int bypass    = d["bypass"] | -1;
+        int type      = d["type"] | -1;
+        int size      = d["size"] | -1;
+        int options   = d["options"] | -1;
+        int enthalpy  = d["enthalpy"] | -1;
+        int ewt       = d["ewt"] | -1;
+
+        if ((preheater < 0 || preheater > 1) ||
+            (bypass < 0 || bypass > 1) ||
+            (type < 1 || type > 2) ||
+            (size < 1 || size > 2) ||
+            (options < 0 || options > 255) ||
+            (enthalpy < 0 || enthalpy > 2) ||
+            (ewt < 0 || ewt > 2)) {
+            publishCmdResult("status", false, "invalid value range");
+            return;
+        }
+
         bool ok = setStatus(
-            (uint8_t)(d["preheater"] | 1), (uint8_t)(d["bypass"] | 1),
-            (uint8_t)(d["type"] | 1), (uint8_t)(d["size"] | 1),
-            (uint8_t)(d["options"] | 0), (uint8_t)(d["enthalpy"] | 0), (uint8_t)(d["ewt"] | 0));
-        publishCmdResult("status", ok);
+            (uint8_t)preheater, (uint8_t)bypass, (uint8_t)type, (uint8_t)size,
+            (uint8_t)options, (uint8_t)enthalpy, (uint8_t)ewt);
+
+        if (ok) {
+            persistStatusToConfig(preheater, bypass, type, size, options, enthalpy, ewt);
+            pollAll(0, true);
+            mqttPublishState();
+        }
+        publishCmdResult("status", ok, ok ? "" : "setStatus failed");
         return;
     }
 
+    // -------------------------------------------------------------------------
+    // vent (Pflichtfelder + 0..100 wie HTML-API)
+    // -------------------------------------------------------------------------
     if (t == b + "/cmd/vent/bereich") {
-        StaticJsonDocument<256> d;
-        if (deserializeJson(d, msg)) { publishCmdResult("vent", false, "invalid json"); return; }
+        StaticJsonDocument<384> d;
+        if (!parseJsonObj(d)) { publishCmdResult("vent", false, "invalid json object"); return; }
+
+        const char* required[] = {
+            "exhaustAbsent","exhaustLow","exhaustMedium",
+            "supplyAbsent","supplyLow","supplyMedium",
+            "exhaustHigh","supplyHigh"
+        };
+        for (auto key : required) {
+            if (!d.containsKey(key)) {
+                publishCmdResult("vent", false, String("missing arg: ") + key);
+                return;
+            }
+        }
+
+        int ea = d["exhaustAbsent"] | -1;
+        int el = d["exhaustLow"] | -1;
+        int em = d["exhaustMedium"] | -1;
+        int sa = d["supplyAbsent"] | -1;
+        int sl = d["supplyLow"] | -1;
+        int sm = d["supplyMedium"] | -1;
+        int eh = d["exhaustHigh"] | -1;
+        int sh = d["supplyHigh"] | -1;
+
+        auto inRange = [](int v) { return v >= 0 && v <= 100; };
+        if (!inRange(ea) || !inRange(el) || !inRange(em) ||
+            !inRange(sa) || !inRange(sl) || !inRange(sm) ||
+            !inRange(eh) || !inRange(sh)) {
+            publishCmdResult("vent", false, "values must be 0..100");
+            return;
+        }
+
         bool ok = setVentilationLevels(
-            (uint8_t)(d["exhaustAbsent"] | 20), (uint8_t)(d["exhaustLow"] | 35),
-            (uint8_t)(d["exhaustMedium"] | 55), (uint8_t)(d["supplyAbsent"] | 20),
-            (uint8_t)(d["supplyLow"] | 35), (uint8_t)(d["supplyMedium"] | 55),
-            (uint8_t)(d["exhaustHigh"] | 80), (uint8_t)(d["supplyHigh"] | 80));
-        publishCmdResult("vent", ok);
+            (uint8_t)ea, (uint8_t)el, (uint8_t)em, (uint8_t)sa,
+            (uint8_t)sl, (uint8_t)sm, (uint8_t)eh, (uint8_t)sh);
+
+        if (ok) {
+            persistVentToConfig(ea, el, em, sa, sl, sm, eh, sh);
+            pollAll(0, true);
+            mqttPublishState();
+        }
+        publishCmdResult("vent", ok, ok ? "" : "setVentilationLevels failed");
         return;
     }
 
+    // -------------------------------------------------------------------------
+    // levelStep (zusätzlicher MQTT-Komfortbefehl)
+    // -------------------------------------------------------------------------
     if (t == b + "/cmd/levelStep/bereich") {
         StaticJsonDocument<128> d;
-        if (deserializeJson(d, msg)) { publishCmdResult("levelStep", false, "invalid json"); return; }
+        if (!parseJsonObj(d)) { publishCmdResult("levelStep", false, "invalid json object"); return; }
 
         String action = d["action"] | "";
         int delta = d["delta"] | 0;
@@ -1164,17 +1395,27 @@ return;
         if (target < 0) target = 0;
         if (target > 4) target = 4;
 
-        bool ok = setLevel(static_cast<uint8_t>(target));
+        // Projektrichtlinie: zuerst persistieren, dann RS232 schreiben
+        if (!persistLevelToConfig(target)) {
+            publishCmdResult("levelStep", false, "persist failed");
+            return;
+        }
+
+        bool ok = setLevel((uint8_t)target);
         if (ok) {
-            _vent.currentLevel = static_cast<uint8_t>(target);
+            // Sofort lokalen Zustand setzen, nicht direkt durch pollAll überschreiben
+            _vent.currentLevel = (uint8_t)target;
             _ventValid = true;
-            pollAll(0, true);
             mqttPublishState();
         }
 
         publishCmdResult("levelStep", ok, ok ? "" : "setLevel failed");
         return;
     }
+
+    AWM_LOGW("MQTT RX unbekanntes Topic: '%s'", t.c_str());
+    publishCmdResult("unknown", false, String("unknown topic: ") + t);
+    return;
 }
 
 bool ComfoAirDriver::mqttEnsureConnected() {
@@ -1184,12 +1425,15 @@ bool ComfoAirDriver::mqttEnsureConnected() {
     if (millis() - _lastMqttReconnect < 3000) return false;
     _lastMqttReconnect = millis();
 
-    const String b = _mqttCfg.topicPrefix;
+    String b = _mqttCfg.topicPrefix ? _mqttCfg.topicPrefix : "";
+    b.trim();
+    while (b.startsWith("/")) b.remove(0, 1);
+    while (b.endsWith("/")) b.remove(b.length() - 1, 1);
+    if (b.isEmpty()) b = "comfoair";
+
     const String onlineTopic = b + "/status/system/json";
 
-    AWM_LOGI("MQTT connect to %s:%d", _mqttCfg.host ? _mqttCfg.host : "(null)", _mqttCfg.port);
-
-    bool ok = _mqtt.connect(
+    const bool ok = _mqtt.connect(
         _mqttCfg.clientId,
         _mqttCfg.user,
         _mqttCfg.pass,
@@ -1199,303 +1443,55 @@ bool ComfoAirDriver::mqttEnsureConnected() {
         "{\"online\":0}"
     );
 
-    if (ok) {
-        _mqtt.subscribe((b + "/cmd/level/bereich").c_str());
-        _mqtt.subscribe((b + "/cmd/comfort/bereich").c_str());
-        _mqtt.subscribe((b + "/cmd/comfort").c_str());       // legacy
-        _mqtt.subscribe((b + "/cmd/comfort/json").c_str());  // legacy
-        _mqtt.subscribe((b + "/cmd/manual/bereich").c_str());
-        _mqtt.subscribe((b + "/cmd/manual/flaps/bereich").c_str());
-        _mqtt.subscribe((b + "/cmd/manual/analog/bereich").c_str());
-        _mqtt.subscribe((b + "/cmd/status/bereich").c_str());
-        _mqtt.subscribe((b + "/cmd/vent/bereich").c_str());
-        _mqtt.subscribe((b + "/cmd/levelStep/bereich").c_str());
-
-        // Wichtig: Cache leeren -> nächster Publish sendet alles neu
-        _mqttLastByTopic.clear();
-
-        _mqtt.publish(onlineTopic.c_str(), "{\"online\":1}", true);
-
-        const String commandInit = "{\"cmd\":\"\",\"ok\":true}";
-        _mqtt.publish((b + "/status/command/bereich").c_str(), commandInit.c_str(), true);
-
-        // NEU: direkt nach Connect einmal alles frisch einlesen und publizieren
-        pollAll(0, true);     // forcierter Voll-Poll
-        mqttPublishState();   // initialer Voll-Status an MQTT
-
-        AWM_LOGI("MQTT verbunden (Initial-Publish ausgeführt)");
-    } else {
+    if (!ok) {
         AWM_LOGW("MQTT connect rc=%d", _mqtt.state());
+        return false;
     }
-    return ok;
-}
 
-void ComfoAirDriver::mqttPublishState() {
-    if (!_mqttEnabled || !_mqtt.connected()) return; // kein && !_stateOk
-    const String b = _mqttCfg.topicPrefix;
-
-    auto areaTopic = [&](const char* area) -> String {
-        return b + "/status/" + String(area);
+    auto sub = [&](const String& topic) {
+        const bool s = _mqtt.subscribe(topic.c_str());
+        AWM_LOGI("MQTT subscribe %s => %s", topic.c_str(), s ? "ok" : "fail");
+        return s;
     };
 
-    auto publishChanged = [&](const String& topic, const String& payload, bool retained = true) -> bool {
-    for (auto& it : _mqttLastByTopic) {
-        if (it.first == topic) {
-            if (it.second == payload) return false;
-            it.second = payload;
+    // Command-Topics
+    constexpr const char* kCmdTopicSuffixes[] = {
+        "/cmd/level/bereich",
+        "/cmd/comfort/bereich",
+        "/cmd/comfort",
+        "/cmd/comfort/json",
+        "/cmd/rs232Mode/bereich",
+        "/cmd/manual/bereich",
+        "/cmd/manual/flaps/bereich",
+        "/cmd/manual/analog/bereich",
+        "/cmd/status/bereich",
+        "/cmd/vent/bereich",
+        "/cmd/levelStep/bereich"
+    };
+    static_assert(sizeof(kCmdTopicSuffixes) / sizeof(kCmdTopicSuffixes[0]) > 0, "No MQTT command topics configured");
 
-            const bool okPub = _mqtt.publish(topic.c_str(), payload.c_str(), retained);
-            if (!okPub) {
-                AWM_LOGE("MQTT publish fehlgeschlagen topic=%s len=%u (Buffer zu klein?)",
-                         topic.c_str(), (unsigned)payload.length());
-            }
-            return true;
+    auto isKnownCmdTopic = [&](const String& topic) -> bool {
+        for (auto s : kCmdTopicSuffixes) {
+            if (topic == b + s) return true;
         }
-    }
-
-    _mqttLastByTopic.push_back({ topic, payload });
-    const bool okPub = _mqtt.publish(topic.c_str(), payload.c_str(), retained);
-    if (!okPub) {
-        AWM_LOGE("MQTT publish fehlgeschlagen topic=%s len=%u (Buffer zu klein?)",
-                 topic.c_str(), (unsigned)payload.length());
-    }
-    return true;
-};
-
-    auto pubJsonChanged = [&](const String& topic, JsonDocument& doc) {
-        String out;
-        serializeJson(doc, out);
-        publishChanged(topic, out, true);
+        return false;
     };
 
-    auto decodeTempC = [](int8_t raw) -> float {
-        return (static_cast<float>(raw) / 2.0f) - 20.0f;
-    };
-
-    // Meta immer publizieren (best effort)
-    {
-        StaticJsonDocument<192> dMeta;
-        dMeta["ok"] = _stateOk;
-        dMeta["manualModeActive"] = _manualModeActive;
-        if (_keyStatusValid) dMeta["keyStatus"] = _keyStatus;
-
-        // NEU: immer setzen, damit HA-Template nie "rs232Mode fehlt" bekommt
-        dMeta["rs232Mode"] = _rsModeValid ? _rsMode : 0;
-
-        pubJsonChanged(areaTopic("meta"), dMeta);
+    for (size_t i = 0; i < sizeof(kCmdTopicSuffixes) / sizeof(kCmdTopicSuffixes[0]); ++i) {
+        sub(b + kCmdTopicSuffixes[i]);
     }
 
-    if (_fanValid) {
-        StaticJsonDocument<160> d;
-        d["supplyPct"] = _fan.supplyPercent;
-        d["exhaustPct"] = _fan.exhaustPercent;
-        d["supplyRpm"] = _fan.supplyRpm;
-        d["exhaustRpm"] = _fan.exhaustRpm;
-        pubJsonChanged(areaTopic("fan"), d);
-    }
+    _mqttLastByTopic.clear();
+    _mqtt.publish(onlineTopic.c_str(), "{\"online\":1}", true);
+    _mqtt.publish((b + "/status/command/bereich").c_str(), "{\"cmd\":\"\",\"ok\":true}", true);
 
-    if (_tempsValid) {
-        StaticJsonDocument<256> d;
-        d["t1Raw"] = static_cast<int>(_temps.t1Outside);
-        d["t2Raw"] = static_cast<int>(_temps.t2Supply);
-        d["t3Raw"] = static_cast<int>(_temps.t3Exhaust);
-        d["t4Raw"] = static_cast<int>(_temps.t4Outlet);
-        d["t1C"] = decodeTempC(_temps.t1Outside);
-        d["t2C"] = decodeTempC(_temps.t2Supply);
-        d["t3C"] = decodeTempC(_temps.t3Exhaust);
-        d["t4C"] = decodeTempC(_temps.t4Outlet);
-
-        if (_tempsD1Valid) {
-            const int8_t c = static_cast<int8_t>(decodeTempC(_tempsD1.comfortTemp));
-
-            // Nur plausiblen Gerätewert verwenden
-            if (c >= 10 && c <= 30) {
-                d["comfortC"] = c;
-            } else if (_comfortTempCmdValid) {
-                d["comfortC"] = _comfortTempCmdC;
-            } else {
-                d["comfortC"] = 23;
-            }
-        } else if (_comfortTempCmdValid) {
-            d["comfortC"] = _comfortTempCmdC;
-        } else {
-            d["comfortC"] = 23;
-        }
-
-        pubJsonChanged(areaTopic("temps"), d);
-    }
-
-    if (_ventValid) {
-        StaticJsonDocument<256> d;
-        d["current"] = _vent.currentLevel;
-        d["supplyCur"] = _vent.supplyCurrent;
-        d["exhaustCur"] = _vent.exhaustCurrent;
-        d["supplyHigh"] = _vent.supplyHigh;
-        d["exhaustHigh"] = _vent.exhaustHigh;
-        d["exhaustAbsent"] = _vent.exhaustAbsent;
-        d["exhaustLow"] = _vent.exhaustLow;
-        d["exhaustMedium"] = _vent.exhaustMedium;
-        d["supplyAbsent"] = _vent.supplyAbsent;
-        d["supplyLow"] = _vent.supplyLow;
-        d["supplyMedium"] = _vent.supplyMedium;
-        pubJsonChanged(areaTopic("vent"), d);
-    }
-
-    if (_flapValid) {
-        StaticJsonDocument<160> d;
-        d["bypassPct"] = _flap.bypassPercent;
-        d["bypassPercent"] = _flap.bypassPercent;
-        d["preheaterState"] = _flap.preheaterState;
-        d["bypassAdc"] = _flap.bypassAdc;
-        d["preheaterAdc"] = _flap.preheaterAdc;
-        pubJsonChanged(areaTopic("flap"), d);
-    }
-
-    if (_bypassValid) {
-        StaticJsonDocument<128> d;
-        d["stage"] = _bypass.stage;
-        d["factor"] = _bypass.factor;
-        d["correction"] = _bypass.correction;
-        d["summerMode"] = _bypass.summerMode;
-        pubJsonChanged(areaTopic("bypass"), d);
-        StaticJsonDocument<96> dSummer;
-        dSummer["mode"] = _bypass.summerMode;                 // 0=Winter, 1=Sommer
-        dSummer["active"] = (_bypass.summerMode == 1);
-        dSummer["text"] = (_bypass.summerMode == 1) ? "Sommer" : "Winter";
-        pubJsonChanged(areaTopic("summer/json"), dSummer);
-    }
-
-    if (_anlagenconfValid) {
-        StaticJsonDocument<224> d;
-        d["preheaterPresent"] = _anlagenconf.preheaterPresent;
-        d["bypassPresent"] = _anlagenconf.bypassPresent;
-        d["type"] = _anlagenconf.type;
-        d["size"] = _anlagenconf.size;
-        d["options"] = _anlagenconf.options;
-        d["activeStatus1"] = _anlagenconf.activeStatus1;
-        d["activeStatus2"] = _anlagenconf.activeStatus2;
-        d["activeStatus3"] = _anlagenconf.activeStatus3;
-        d["enthalpyPresent"] = _anlagenconf.enthalpyPresent;
-        d["ewtPresent"] = _anlagenconf.ewtPresent;
-        pubJsonChanged(areaTopic("anlagenconf"), d);
-    }
-
-    if (_ainValid) {
-        StaticJsonDocument<128> d;
-        d["a1"] = _ain.a1;
-        d["a2"] = _ain.a2;
-        d["a3"] = _ain.a3;
-        d["a4"] = _ain.a4;
-        pubJsonChanged(areaTopic("ain"), d);
-    }
-
-    if (_preheatValid) {
-        StaticJsonDocument<160> d;
-        d["flapStatus"] = _preheat.flapStatus;
-        d["frostActive"] = _preheat.frostActive;
-        d["preheatOn"] = _preheat.preheatOn;
-        d["frostMins"] = _preheat.frostMins;
-        d["frostSafety"] = _preheat.frostSafety;
-        pubJsonChanged(areaTopic("preheat"), d);
-    }
-
-    if (_delayValid) {
-        StaticJsonDocument<192> d;
-        d["bathOnDelay"] = _delay.bathOnDelay;
-        d["bathOffDelay"] = _delay.bathOffDelay;
-        d["l1OffDelay"] = _delay.l1OffDelay;
-        d["boostDuration"] = _delay.boostDuration;
-        d["filterWeeks"] = _delay.filterWeeks;
-        d["rfHighShort"] = _delay.rfHighShort;
-        d["rfHighLong"] = _delay.rfHighLong;
-        d["hoodOffDelay"] = _delay.hoodOffDelay;
-        pubJsonChanged(areaTopic("delay"), d);
-    }
-
-    // NEU: analogConfig immer publizieren (mit Defaults), auch wenn Read fehlschlägt
-    {
-        StaticJsonDocument<320> d;
-        d["presentFlags"] = _analogCfgValid ? _analogCfg.presentFlags : 0;
-        d["controlFlags"] = _analogCfgValid ? _analogCfg.controlFlags : 0;
-        d["polarityFlags"] = _analogCfgValid ? _analogCfg.polarityFlags : 0;
-        d["a1Min"] = _analogCfgValid ? _analogCfg.a1Min : 0;
-        d["a1Max"] = _analogCfgValid ? _analogCfg.a1Max : 0;
-        d["a1Setpoint"] = _analogCfgValid ? _analogCfg.a1Setpoint : 0;
-        d["a2Min"] = _analogCfgValid ? _analogCfg.a2Min : 0;
-        d["a2Max"] = _analogCfgValid ? _analogCfg.a2Max : 0;
-        d["a2Setpoint"] = _analogCfgValid ? _analogCfg.a2Setpoint : 0;
-        d["a3Min"] = _analogCfgValid ? _analogCfg.a3Min : 0;
-        d["a3Max"] = _analogCfgValid ? _analogCfg.a3Max : 0;
-        d["a3Setpoint"] = _analogCfgValid ? _analogCfg.a3Setpoint : 0;
-        d["a4Min"] = _analogCfgValid ? _analogCfg.a4Min : 0;
-        d["a4Max"] = _analogCfgValid ? _analogCfg.a4Max : 0;
-        d["a4Setpoint"] = _analogCfgValid ? _analogCfg.a4Setpoint : 0;
-        d["rfMin"] = _analogCfgValid ? _analogCfg.rfMin : 0;
-        d["rfMax"] = _analogCfgValid ? _analogCfg.rfMax : 0;
-        d["rfSetpoint"] = _analogCfgValid ? _analogCfg.rfSetpoint : 0;
-        d["priority"] = _analogCfgValid ? _analogCfg.priority : 0;
-
-        pubJsonChanged(areaTopic("analogConfig"), d);
-    }
-
-    // Manual kann unabhängig vom Poll publizieren
-    {
-        StaticJsonDocument<512> d;
-        d["active"] = _manualModeActive;
-        d["autoStopArmed"] = _testFlapsAutoStopArmed;
-        d["autoStopDelaySec"] = _manualFlapsLastDelaySec;
-        d["latchBypass"] = _testFlapsLatchBypass;
-        d["latchPreheater"] = _testFlapsLatchPreheater;
-        d["autoStopBypass"] = _testFlapsAutoStopBypass;
-        d["autoStopPreheater"] = _testFlapsAutoStopPreheater;
-
-        uint32_t remainingSec = 0;
-        if (_testFlapsAutoStopArmed) {
-            int32_t diffMs = static_cast<int32_t>(_testFlapsAutoStopDueMs - millis());
-            if (diffMs > 0) remainingSec = static_cast<uint32_t>((diffMs + 999) / 1000);
-        }
-        d["autoStopRemainingSec"] = remainingSec;
-
-        auto analog = d.createNestedObject("analogCmd");
-        analog["supply"] = _manualAnalogSupplyCmd;
-        analog["exhaust"] = _manualAnalogExhaustCmd;
-        analog["postheater"] = _manualAnalogPostheaterCmd;
-
-        auto fl = d.createNestedObject("flapsLive");
-        fl["bypassPercent"] = _flap.bypassPercent;
-        fl["preheaterState"] = _flap.preheaterState;
-
-        d["requestedBypass"] = _manualRequestedBypass;
-        d["requestedPreheater"] = _manualRequestedPreheater;
-        d["requestedBypassText"] = getManualRequestedBypassText();
-        d["requestedPreheaterText"] = getManualRequestedPreheaterText();
-
-        // NEU: explizite Merker für HA/UI
-        d["requestedBypassKnown"] = isManualRequestedBypassKnown();
-        d["requestedBypassOpen"] = isManualRequestedBypassOpen();
-        d["requestedBypassClosed"] = isManualRequestedBypassClosed();
-
-        d["requestedPreheaterKnown"] = isManualRequestedPreheaterKnown();
-        d["requestedPreheaterOpen"] = isManualRequestedPreheaterOpen();
-        d["requestedPreheaterClosed"] = isManualRequestedPreheaterClosed();
-
-        // Neu: offizielles JSON-Status-Topic
-        pubJsonChanged(areaTopic("manual/json"), d);
-        // Optional: Legacy-Kompatibilität
-        pubJsonChanged(areaTopic("manual"), d);
-    }
-}
-
-void ComfoAirDriver::mqttLoop() {
-    serviceManualModeAutoStop();
-    if (!_mqttEnabled) return;
-    if (WiFi.status() != WL_CONNECTED) return;
-    if (!mqttEnsureConnected()) return;
-    _mqtt.loop();
-
-    // Publish-Intervall entfernt: Change-Only Publishing entscheidet selbst
+    pollAll(0, true);
     mqttPublishState();
+
+    AWM_LOGI("MQTT verbunden");
+    return true;
 }
+
 bool ComfoAirDriver::setStatus(uint8_t preheaterPresent,
     uint8_t bypassPresent,
     uint8_t type,
@@ -1525,8 +1521,12 @@ bool ComfoAirDriver::setVentilationLevels(uint8_t exhaustAbsent,
     if (!_ready) return false;
     while (_serial->available()) _serial->read();
 
+    // Protokoll: 0x00CF mit 9 Byte Payload, letztes Byte reserviert = 0x00
     std::vector<uint8_t> payload{
-        exhaustAbsent, exhaustLow, exhaustMedium, supplyAbsent, supplyLow, supplyMedium, exhaustHigh, supplyHigh
+        exhaustAbsent, exhaustLow, exhaustMedium,
+        supplyAbsent, supplyLow, supplyMedium,
+        exhaustHigh, supplyHigh,
+        0x00
     };
 
     writeFrame(0x00CF, payload);
@@ -1573,7 +1573,7 @@ bool ComfoAirDriver::setManualOutputs(uint8_t relaisBits, uint8_t feedbackBits) 
 
 bool ComfoAirDriver::setManualAnalog(uint8_t supplyPercent, uint8_t exhaustPercent, uint8_t postheaterPercent) {
     // 0x0007 – Analogausgänge im manuellen Modus setzen (0–100%).
-    // Startet manuellen Modus automatisch falls noch nicht aktiv.
+    // // Startet manuellen Modus automatisch falls noch nicht aktiv.
     // Fallback: nur ACK akzeptieren falls kein Antwort-Frame kommt.
 
     auto inRange = [](uint8_t v) { return v <= 100; };
@@ -1707,7 +1707,7 @@ void ComfoAirDriver::applyMqttCfgOwned(const ComfoMqttConfig& cfg) {
     _mqttUserS = cfg.user ? cfg.user : "";
     _mqttPassS = cfg.pass ? cfg.pass : "";
     _mqttClientIdS = cfg.clientId ? cfg.clientId : "";
-    _mqttTopicPrefixS = cfg.topicPrefix ? cfg.topicPrefix : "";
+    _mqttTopicPrefixS = normalizeTopicPrefix(cfg.topicPrefix ? cfg.topicPrefix : "comfoair");
 
     _mqttCfg.host = _mqttHostS.c_str();
     _mqttCfg.port = cfg.port;
@@ -1722,5 +1722,117 @@ void ComfoAirDriver::setManualAutoStopDelaySecFromConfig(uint16_t sec) {
     _manualFlapsLastDelaySec = sec;
     if (_mqttEnabled && _mqtt.connected()) {
         mqttPublishState();
+    }
+}
+
+void ComfoAirDriver::mqttLoop() {
+    serviceManualModeAutoStop();
+
+    if (!_mqttEnabled) return;
+    if (WiFi.status() != WL_CONNECTED) return;
+    if (!mqttEnsureConnected()) return;
+
+    _mqtt.loop();
+    mqttPublishState();
+}
+
+void ComfoAirDriver::mqttPublishState() {
+    if (!_mqttEnabled || !_mqtt.connected()) return;
+
+    const String b = String(_mqttCfg.topicPrefix ? _mqttCfg.topicPrefix : "comfoair");
+
+    auto areaTopic = [&](const char* area) -> String {
+        return b + "/status/" + String(area);
+    };
+
+    auto publishChanged = [&](const String& topic, const String& payload, bool retained = true) -> bool {
+        for (auto& it : _mqttLastByTopic) {
+            if (it.first == topic) {
+                if (it.second == payload) return false;
+                it.second = payload;
+                _mqtt.publish(topic.c_str(), payload.c_str(), retained);
+                return true;
+            }
+        }
+        _mqttLastByTopic.push_back({ topic, payload });
+        _mqtt.publish(topic.c_str(), payload.c_str(), retained);
+        return true;
+    };
+
+    auto pubJsonChanged = [&](const String& topic, JsonDocument& doc) {
+        String out;
+        serializeJson(doc, out);
+        publishChanged(topic, out, true);
+    };
+
+    auto decodeTempC = [](int8_t raw) -> float {
+        return (static_cast<float>(raw) / 2.0f) - 20.0f;
+    };
+
+    // Meta
+    {
+        StaticJsonDocument<192> d;
+        d["ok"] = _stateOk;
+        d["manualModeActive"] = _manualModeActive;
+        d["rs232Mode"] = _rsModeValid ? _rsMode : 0;
+        if (_keyStatusValid) d["keyStatus"] = _keyStatus;
+        pubJsonChanged(areaTopic("meta"), d);
+    }
+
+    // Fan
+    if (_fanValid) {
+        StaticJsonDocument<160> d;
+        d["supplyPct"] = _fan.supplyPercent;
+        d["exhaustPct"] = _fan.exhaustPercent;
+        d["supplyRpm"] = _fan.supplyRpm;
+        d["exhaustRpm"] = _fan.exhaustRpm;
+        pubJsonChanged(areaTopic("fan"), d);
+    }
+
+    // Temps
+    if (_tempsValid) {
+        StaticJsonDocument<256> d;
+        d["t1Raw"] = static_cast<int>(_temps.t1Outside);
+        d["t2Raw"] = static_cast<int>(_temps.t2Supply);
+        d["t3Raw"] = static_cast<int>(_temps.t3Exhaust);
+        d["t4Raw"] = static_cast<int>(_temps.t4Outlet);
+        d["t1C"] = decodeTempC(_temps.t1Outside);
+        d["t2C"] = decodeTempC(_temps.t2Supply);
+        d["t3C"] = decodeTempC(_temps.t3Exhaust);
+        d["t4C"] = decodeTempC(_temps.t4Outlet);
+        if (_tempsD1Valid) d["comfortC"] = static_cast<int>(decodeTempC(_tempsD1.comfortTemp));
+        else if (_comfortTempCmdValid) d["comfortC"] = _comfortTempCmdC;
+        pubJsonChanged(areaTopic("temps"), d);
+    }
+
+    // Vent
+    if (_ventValid) {
+        StaticJsonDocument<256> d;
+        d["current"] = _vent.currentLevel;
+        d["supplyCur"] = _vent.supplyCurrent;
+        d["exhaustCur"] = _vent.exhaustCurrent;
+        d["supplyHigh"] = _vent.supplyHigh;
+        d["exhaustHigh"] = _vent.exhaustHigh;
+        d["exhaustAbsent"] = _vent.exhaustAbsent;
+        d["exhaustLow"] = _vent.exhaustLow;
+        d["exhaustMedium"] = _vent.exhaustMedium;
+        d["supplyAbsent"] = _vent.supplyAbsent;
+        d["supplyLow"] = _vent.supplyLow;
+        d["supplyMedium"] = _vent.supplyMedium;
+        pubJsonChanged(areaTopic("vent"), d);
+    }
+
+    // Manual
+    {
+        StaticJsonDocument<256> d;
+        d["active"] = _manualModeActive;
+        d["autoStopArmed"] = _testFlapsAutoStopArmed;
+        d["autoStopDelaySec"] = _manualFlapsLastDelaySec;
+        d["requestedBypass"] = _manualRequestedBypass;
+        d["requestedPreheater"] = _manualRequestedPreheater;
+        d["requestedBypassText"] = getManualRequestedBypassText();
+        d["requestedPreheaterText"] = getManualRequestedPreheaterText();
+        pubJsonChanged(areaTopic("manual"), d);
+        pubJsonChanged(areaTopic("manual/json"), d);
     }
 }

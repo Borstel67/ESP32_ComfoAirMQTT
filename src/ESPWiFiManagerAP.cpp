@@ -990,7 +990,7 @@ namespace {
         String user = "";
         String pass = "";
         String clientId = "ComfoAirESP32";
-        String topicPrefix = "ComfoAir";
+        String topicPrefix = "comfoair";
     };
 
     static bool toBoolArg(const String& s) {
@@ -1071,27 +1071,46 @@ void ESPWiFiManagerAP::handleMqttConfigSave(AsyncWebServerRequest* request) {
     if (request->hasArg("topicPrefix")) c.topicPrefix = request->arg("topicPrefix");
 
     c.host.trim();
+    c.topicPrefix.trim();
+    while (c.topicPrefix.startsWith("/")) c.topicPrefix.remove(0, 1);
+    while (c.topicPrefix.endsWith("/"))   c.topicPrefix.remove(c.topicPrefix.length() - 1, 1);
+    if (c.topicPrefix.isEmpty()) c.topicPrefix = "comfoair";
 
     if (c.enabled && c.host.isEmpty()) {
         request->send(400, "application/json",
-                      "{\"ok\":false,\"error\":\"host required when mqtt enabled\"}");
+            "{\"ok\":false,\"error\":\"host required when mqtt enabled\"}");
         return;
     }
 
     if (c.port < 1 || c.port > 65535) {
         request->send(400, "application/json",
-                      "{\"ok\":false,\"error\":\"port must be 1..65535\"}");
+            "{\"ok\":false,\"error\":\"port must be 1..65535\"}");
         return;
     }
 
-    request->send(200, "application/json", "{\"ok\":true}");
-    saveMqttCfg(c);
-}
+    if (!saveMqttCfg(c)) {
+        request->send(500, "application/json",
+            "{\"ok\":false,\"error\":\"save failed\"}");
+        return;
+    }
 
-void ESPWiFiManagerAP::handleSysInfo(AsyncWebServerRequest* request) {
-    AsyncWebServerResponse* response = request->beginResponse(200, "application/json", "{");
-    response->addHeader("Access-Control-Allow-Origin", "*");
-    response->addHeader("Access-Control-Allow-Headers", "*");
-    response->addHeader("Access-Control-Allow-Methods", "OPTIONS, POST, GET, DELETE");
-    request->send(response);
+    if (comfo) {
+        ComfoMqttConfig cfg{
+            c.host.c_str(),
+            c.port,
+            c.user.c_str(),
+            c.pass.c_str(),
+            c.clientId.c_str(),
+            c.topicPrefix.c_str()
+        };
+
+        const bool applied = comfo->mqttApplyConfig(cfg, c.enabled, true);
+        if (!applied) {
+            request->send(200, "application/json",
+                "{\"ok\":true,\"applied\":false,\"error\":\"mqtt connect/publish failed\"}");
+            return;
+        }
+    }
+
+    request->send(200, "application/json", "{\"ok\":true,\"applied\":true}");
 }

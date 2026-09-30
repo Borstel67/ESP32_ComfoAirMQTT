@@ -1,0 +1,25 @@
+{
+    "configurations": [
+        {
+            "name": "Win32",
+            "includePath": [
+                "${workspaceFolder}/**",
+                "C:/Users/Ralf/AppData/Local/Arduino15/packages/esp32/hardware/esp32/3.3.8/**",
+                "C:/Users/Ralf/AppData/Local/Arduino15/packages/esp32/tools/**"
+            ],
+            "defines": [
+                "_DEBUG",
+                "UNICODE",
+                "_UNICODE",
+                "ESP32",
+                "ARDUINO=10607",
+                "ARDUINO_ARCH_ESP32"
+            ],
+            "compilerPath": "C:/Users/Ralf/AppData/Local/Arduino15/packages/esp32/tools/xtensa-esp32-elf-gcc/esp-12.2.0_20230208/bin/xtensa-esp32-elf-gcc.exe",
+            "cStandard": "c11",
+            "cppStandard": "c++17",
+            "intelliSenseMode": "gcc-x64"
+        }
+    ],
+    "version": 4
+}
