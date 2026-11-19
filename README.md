@@ -1,6 +1,6 @@
-# ComfoAirMQTTESP
+# ESP32_ComfoAirMQTT
 
-`ComfoAirMQTTESP` ist ein ESP32-basiertes Gateway für eine **Zehnder ComfoAir 350** Lüftungsanlage.  
+`ESP32_ComfoAirMQTT` ist ein ESP32-basiertes Gateway für eine **Zehnder ComfoAir 350** Lüftungsanlage.  
 Das Projekt verbindet die ComfoAir über RS232 mit einem ESP32, liest Betriebsdaten aus, stellt ein Webinterface bereit und veröffentlicht Statuswerte sowie Steuerfunktionen über MQTT.
 
 Ziel ist die einfache Integration der Lüftungsanlage in Systeme wie **Home Assistant**, **Node-RED**, eigene MQTT-Anwendungen oder andere Smart-Home-Plattformen.
@@ -108,7 +108,7 @@ Es wird ein geeigneter Pegelwandler wie ein MAX3232 benötigt.
 
 | Datei / Ordner | Aufgabe |
 |---|---|
-| `ComfoAirMQTTESP.ino` | Hauptsketch, Setup, Loop, WiFi-Start, MQTT-Initialisierung |
+| `ESP32_ComfoAirMQTT.ino` | Hauptsketch, Setup, Loop, WiFi-Start, MQTT-Initialisierung |
 | `src/ComfoAirDriver.h/.cpp` | RS232-Protokoll, ComfoAir-Kommandos, MQTT-Publishing |
 | `src/ESPWiFiManagerAP.h/.cpp` | Access Point, Captive Portal, Provisioning |
 | `src/ESPWiFiManagerSTA.h/.cpp` | Webserver im verbundenen WLAN, HTTP-API |
@@ -353,7 +353,7 @@ Wichtige Felder:
 1. ESP32-Board auswählen.
 2. Benötigte Bibliotheken installieren.
 3. LittleFS-Dateien aus `data/` hochladen.
-4. Sketch `ComfoAirMQTTESP.ino` kompilieren.
+4. Sketch `ESP32_ComfoAirMQTT.ino` kompilieren.
 5. Firmware flashen.
 6. Seriellen Monitor mit `115200` Baud öffnen.
 

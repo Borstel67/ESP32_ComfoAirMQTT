@@ -3,6 +3,11 @@
 build.partitions=partitions.csv
 build.filesystem=littlefs
 
+# ElegantOTA immer für den AsyncWebServer bauen. Visual Micro kompiliert die Library-Quellen aus
+# Documents\Arduino\libraries\ElegantOTA (Standard dort: 0) -> sonst "undefined reference to
+# ElegantOTAClass::begin(AsyncWebServer*, ...)" beim Linken.
+compiler.cpp.extra_flags=-DELEGANTOTA_USE_ASYNC_WEBSERVER=1
+
 menu.PartitionScheme.custom=Custom Partition
 menu.PartitionScheme.custom.build.partitions=partitions.csv
 

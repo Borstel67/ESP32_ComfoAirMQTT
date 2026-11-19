@@ -33,11 +33,9 @@
 
 #if AWM_ENABLE_LOG
 
-  // Internes Makro: schreibt in Serial und in den Ring-Puffer.
-  #define AWM__PRINTF(_name, fmt, ...) do { \
-    Serial.printf("[" AWM_LOG_TAG "] " _name ": " fmt "\n", ##__VA_ARGS__); \
-    awm_logbuf_appendf("[" AWM_LOG_TAG "] " _name ": " fmt "\n", ##__VA_ARGS__); \
-  } while (0)
+  // Internes Makro: formatiert einmal, schreibt in Serial und in den Ring-Puffer.
+  #define AWM__PRINTF(_name, fmt, ...) \
+    awm_logf("[" AWM_LOG_TAG "] " _name ": " fmt "\n", ##__VA_ARGS__)
 
   #if (AWM_LOG_LEVEL >= AWM_L_ERROR)
     #define AWM_LOGE(fmt, ...) AWM__PRINTF("E", fmt, ##__VA_ARGS__)

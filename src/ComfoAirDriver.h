@@ -5,6 +5,9 @@
 #include <vector>
 #include <WiFiClient.h>
 #include <PubSubClient.h>
+#include <ArduinoJson.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/semphr.h>
 
 #ifndef AWM_LOG_TAG
 #define AWM_LOG_TAG "COMFO"
@@ -30,8 +33,6 @@ static constexpr uint8_t CA_ACK_LO   = 0xF3;
 // ----------------------
 // Strukturen zuerst
 // ----------------------
-struct ComfoVersionInfo { uint8_t versionMajor=0, versionMinor=0, beta=0; char deviceName[11]{}; uint8_t ccEaseMajor=0, ccEaseMinor=0; uint8_t ccLuxeMajor=0, ccLuxeMinor=0; };
-struct ComfoConnectorVersionInfo { uint8_t versionMajor=0, versionMinor=0; char deviceName[11]{}; uint8_t ccEaseMajor=0, ccEaseMinor=0; uint8_t ccLuxeMajor=0, ccLuxeMinor=0; };
 struct ComfoInputs { uint8_t stageSwitch=0; uint8_t switches=0; };
 struct ComfoFanStatus { uint8_t supplyPercent=0, exhaustPercent=0; uint16_t supplyRpm=0, exhaustRpm=0; };
 struct ComfoFlapStatus {
@@ -79,14 +80,7 @@ struct ComfoBypassStatusDF {
     uint8_t summerMode=0;  // Byte[7]  = 1 Sommer / 0 Winter
 };
 struct ComfoPreheatStatusE1 { uint8_t flapStatus=0,frostActive=0,preheatOn=0; uint16_t frostMins=0; uint8_t frostSafety=0; };
-struct ComfoRfStatusE5 { uint16_t rfAddr4=0; uint8_t rfAddr3=0, rfAddr2=0; uint16_t rfAddr1=0; uint8_t rfId=0, modulePresent=0, selfLearning=0; };
-struct ComfoPreheatHistoryE9 { int8_t values[8] = {0}; };
 struct ComfoEwtStatusEB { int8_t ewtLow=0, ewtHigh=0; uint8_t ewtSpeedUp=0, hoodSpeedUp=0, heaterPower=0, heaterI=0; int8_t heaterTSet=0; };
-struct ComfoEaseParams { uint8_t rtcDay=0, rtcHour=0, rtcMinute=0, tempRaw=0, versionEase=0; };
-struct ComfoEaseKeyStatus { uint8_t ventMs=0, modeMs=0, clockMs=0, tempMs=0, plusMs=0, minusMs=0, status=0; };
-struct ComfoRfRxCommand { uint8_t receiverType=0, receiverId=0, senderType=0, senderId=0, lifetime=0, dataType=0; uint8_t data[10]{}; };
-struct ComfoParams38 { uint8_t rtcDay=0, rtcHour=0, rtcMinute=0, backlightTimeout=0, backlightLevel=0; };
-struct ComfoDisplayState { uint8_t b1=0,b2=0,b3=0,b4=0,b5=0,b6=0,b7=0,b8=0,b9=0,b10=0; };
 
 // MQTT-Konfiguration
 struct ComfoMqttConfig { const char* host; int port; const char* user; const char* pass; const char* clientId; const char* topicPrefix; };
@@ -101,25 +95,22 @@ public:
 
     // Poll & MQTT
     bool pollAll(uint32_t minIntervalMs = 5000, bool force = false); // füllt interne Snapshots
+    void requestPoll() { _pollRequested = true; }                    // nächster pollAll() läuft sofort (thread-safe genug: einzelnes Flag)
+    // Schreibt den zuletzt gepollten Zustand (ohne RS232-Zugriff) in doc; Rückgabe = Kernwerte gültig.
+    bool fillStateJson(JsonDocument& doc);
     bool mqttInit(WiFiClient& net, const ComfoMqttConfig& cfg);
     void mqttSetEnabled(bool enabled);          // NEU
-    bool mqttIsEnabled() const;                 // NEU
     void mqttLoop(); // kümmert sich um Reconnect + Publish zyklisch
-    bool mqttApplyConfig(const ComfoMqttConfig& cfg, bool enabled, bool publishNow = true); // NEU
+    // Übernimmt eine neue MQTT-Konfiguration sofort. Nur aus dem loop()-Task aufrufen.
+    bool mqttApplyConfig(const ComfoMqttConfig& cfg, bool enabled, bool publishNow = true);
+    // Threadsichere Variante (z. B. aus HTTP-Handlern): Übernahme im nächsten mqttLoop().
+    void mqttRequestConfig(const ComfoMqttConfig& cfg, bool enabled);
 
     // 6.1 Checksumme
     static uint8_t computeChecksum(uint16_t command, const std::vector<uint8_t>& data);
 
     // 7.0 Allgemein
-    bool getBootloaderVersion(std::vector<uint8_t>& response);
-    bool getFirmwareVersion(std::vector<uint8_t>& response);
-    bool getConnectorBoardVersion(std::vector<uint8_t>& response);
     bool setRs232Mode(uint8_t mode, std::vector<uint8_t>& response);
-
-    // 7.0 Allgemein – komfortable, dekodierte Varianten
-    bool getBootloaderVersionInfo(ComfoVersionInfo& info);              // 0x0067 → 0x0068
-    bool getFirmwareVersionInfo(ComfoVersionInfo& info);                // 0x0069 → 0x006A
-    bool getConnectorBoardVersionInfo(ComfoConnectorVersionInfo& info); // 0x00A1 → 0x00A2
 
     // RS232-Modus lesen (aus Antwort auf 0x009B/0x009C)
     bool getRs232Mode(uint8_t& mode);  // 0x00 = ohne Verbindung, 0x01=Nur PC, 0x02=Nur CC-Ease, 0x03=PC Master, 0x04=PC Logmodus
@@ -141,53 +132,22 @@ public:
     bool getRuntimeDD(ComfoRuntimeDD& out);               // 0x00DD
     bool getBypassStatusDF(ComfoBypassStatusDF& out);     // 0x00DF
     bool getPreheatStatusE1(ComfoPreheatStatusE1& out);   // 0x00E1
-    bool getRfStatusE5(ComfoRfStatusE5& out);             // 0x00E5
-    bool getPreheatHistoryE9(ComfoPreheatHistoryE9& out); // 0x00E9
     bool getEwtStatusEB(ComfoEwtStatusEB& out);           // 0x00EB
-
-    // 8.0 CC-Ease an ComfoAir
-    bool easeRequestData(uint16_t& responseCommand,
-                         std::vector<uint8_t>& responsePayload);   // 0x0033
-    bool easeSetParams(const ComfoEaseParams& params);              // 0x0035
-    bool easeSendKeyStatus(const ComfoEaseKeyStatus& keys);         // 0x0037
-    bool easeSendRfCommand(const ComfoRfRxCommand& cmd);            // 0x0039
-
-    // Alte Roh-Varianten (Kompatibilität)
-    bool easeGetData(std::vector<uint8_t>& response);               // 0x0033
-    bool easeSetParams(const std::vector<uint8_t>& payload);        // 0x0035/0x0037 per Payload
-
-    // 8.1 – Dekoder für Antworten (ComfoAir -> CC-Ease)
-    bool parseParams38(const std::vector<uint8_t>& payload, ComfoParams38& out) const;
-    bool parseDisplay3C(const std::vector<uint8_t>& payload, ComfoDisplayState& out) const;
 
     // 9.0 Manueller Modus
     bool startManualMode(); // 0x0001 -> 0x0002
     bool endManualMode();   // 0x0019 -> 0x001A
-    bool isManualModeActive() const { return _manualModeActive; }
-
-    // Kompatibilität (alt)
-    bool startTestMode() { return startManualMode(); }
-    bool endTestMode()   { return endManualMode(); }
-    bool isTestModeActive() const { return isManualModeActive(); }
-
-    // 0x0005 – Ausgänge setzen
-    bool setManualOutputs(uint8_t relaisBits, uint8_t feedbackBits);
-    bool setTestOutputs(uint8_t relaisBits, uint8_t feedbackBits) { return setManualOutputs(relaisBits, feedbackBits); }
 
     // 0x0007 – Analogausgänge setzen
     bool setManualAnalog(uint8_t supplyPercent, uint8_t exhaustPercent, uint8_t postheaterPercent);
-    bool setTestAnalog(uint8_t supplyPercent, uint8_t exhaustPercent, uint8_t postheaterPercent) { return setManualAnalog(supplyPercent, exhaustPercent, postheaterPercent); }
 
     // 0x0009 – Klappen setzen
     bool setManualFlaps(uint8_t bypass, uint8_t preheater);
-    bool setTestFlaps(uint8_t bypass, uint8_t preheater) { return setManualFlaps(bypass, preheater); }
 
     // 0x0009 mit Auto-Stop
     bool setManualFlapsWithAutoStop(uint8_t bypass, uint8_t preheater, uint16_t delaySeconds);
-    bool setTestFlapsWithAutoStop(uint8_t bypass, uint8_t preheater, uint16_t delaySeconds) { return setManualFlapsWithAutoStop(bypass, preheater, delaySeconds); }
 
     void serviceManualModeAutoStop();
-    void serviceTestModeAutoStop() { serviceManualModeAutoStop(); }
 
     // Generischer Sender
     bool sendCommand(uint16_t command,
@@ -198,25 +158,6 @@ public:
 
     // 7.2 Schreibkommandos (PC an ComfoAir)
     bool setLevel(uint8_t level);
-
-    bool setAnalogConfig(uint8_t presentFlags,
-                         uint8_t controlFlags,
-                         uint8_t polarityFlags,
-                         uint8_t a1Min, uint8_t a1Max, uint8_t a1Set,
-                         uint8_t a2Min, uint8_t a2Max, uint8_t a2Set,
-                         uint8_t a3Min, uint8_t a3Max, uint8_t a3Set,
-                         uint8_t a4Min, uint8_t a4Max, uint8_t a4Set,
-                         uint8_t rfMin, uint8_t rfMax, uint8_t rfSet,
-                         uint8_t priority);
-
-    bool setDelayTimes(uint8_t bathOnDelay,
-                       uint8_t bathOffDelay,
-                       uint8_t l1OffDelay,
-                       uint8_t boostMinutes,
-                       uint8_t filterWeeks,
-                       uint8_t rfHighShort,
-                       uint8_t rfHighLong,
-                       uint8_t hoodOffDelay);
 
     bool setVentilationLevels(uint8_t exhaustAbsent,
                               uint8_t exhaustLow,
@@ -238,35 +179,8 @@ public:
                    uint8_t enthalpyPresent,
                    uint8_t ewtPresent);
 
-    bool resetAndSelftest(uint8_t resetErrors,
-                          uint8_t resetSettings,
-                          uint8_t startSelftest,
-                          uint8_t resetFilterHours);
-
-    bool setEwtAndHeaterRaw(uint8_t ewtLowRaw,
-                            uint8_t ewtHighRaw,
-                            uint8_t ewtSpeedUp,
-                            uint8_t hoodSpeedUp,
-                            uint8_t heaterTargetRaw);
-
-    bool setEwtAndHeaterC(int8_t ewtLowC,
-                          int8_t ewtHighC,
-                          uint8_t ewtSpeedUp,
-                          uint8_t hoodSpeedUp,
-                          int8_t heaterTargetC);
-
-    uint8_t getManualRequestedBypass() const { return _manualRequestedBypass; }
-    uint8_t getManualRequestedPreheater() const { return _manualRequestedPreheater; }
     const char* getManualRequestedBypassText() const;
     const char* getManualRequestedPreheaterText() const;
-
-    bool isManualRequestedBypassKnown() const { return _manualRequestedBypass == 0 || _manualRequestedBypass == 1; }
-    bool isManualRequestedBypassOpen() const { return _manualRequestedBypass == 1; }
-    bool isManualRequestedBypassClosed() const { return _manualRequestedBypass == 0; }
-
-    bool isManualRequestedPreheaterKnown() const { return _manualRequestedPreheater == 0 || _manualRequestedPreheater == 1; }
-    bool isManualRequestedPreheaterOpen() const { return _manualRequestedPreheater == 1; }
-    bool isManualRequestedPreheaterClosed() const { return _manualRequestedPreheater == 0; }
 
     // Auto-Stop-Wert aus config.json in Runtime/MQTT spiegeln
     void setManualAutoStopDelaySecFromConfig(uint16_t sec);
@@ -296,6 +210,17 @@ private:
     String _mqttTopicPrefixS;
 
     void applyMqttCfgOwned(const ComfoMqttConfig& cfg); // NEU
+    void mqttApplyPendingConfig();
+
+    // Von mqttRequestConfig() vorgemerkte Konfiguration (durch _mqttCfgMutex geschützt)
+    SemaphoreHandle_t _mqttCfgMutex{nullptr};
+    volatile bool _mqttCfgPending{false};
+    String _pendHost, _pendUser, _pendPass, _pendClientId, _pendTopicPrefix;
+    int    _pendPort{1883};
+    bool   _pendEnabled{false};
+
+    // true = Zustand hat sich geändert, mqttLoop() soll veröffentlichen
+    volatile bool _mqttDirty{true};
 
     // NEU: Change-Only Cache, wird bei Reconnect zurückgesetzt
     std::vector<std::pair<String, String>> _mqttLastByTopic;
@@ -334,6 +259,13 @@ private:
     bool _rsModeValid{false};
 
     uint32_t _lastPoll{0};
+    volatile bool _pollRequested{false};
+    uint32_t _lastSlowPoll{0};     // seltene Werte (Laufzeit, Fehler, Konfiguration) nur alle 60 s
+    bool     _slowPolled{false};
+    bool     _slowOk{true};
+
+    // Serialisiert RS232-Transaktionen zwischen loop() und den Async-HTTP-Handlern
+    SemaphoreHandle_t _ioMutex{nullptr};
 
     static ComfoAirDriver* _cbInstance;
 

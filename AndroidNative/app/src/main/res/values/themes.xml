@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Dunkles Theme wie die Weboberfläche (Hintergrund #0b1220) -->
+    <style name="Theme.ComfoAirControl" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">#0B1220</item>
+        <item name="android:statusBarColor">#0B1220</item>
+        <item name="android:navigationBarColor">#121A2B</item>
+    </style>
+</resources>

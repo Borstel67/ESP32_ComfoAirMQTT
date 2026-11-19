@@ -1,4 +1,4 @@
-// ComfoAirDriver.cpp
+﻿// ComfoAirDriver.cpp
 // RS232-Treiber für Zehnder ComfoAir 350:
 // - Frame-Protokoll (senden, empfangen, Escaping, Checksumme)
 // - Alle Lese-/Schreibkommandos 0x0001..0x00EB
@@ -13,88 +13,65 @@ ComfoAirDriver* ComfoAirDriver::_cbInstance = nullptr;
 
 namespace {
     // Hilfsfunktionen für persistente config.json-Operationen.
-    // Alle Funktionen lesen den aktuellen Stand, ergänzen die neuen Werte
-    // und schreiben das Dokument zurück ins NVS.
-    static int clampCfg(int v, int lo, int hi) {
-        if (v < lo) return lo;
-        if (v > hi) return hi;
-        return v;
-    }
-
-    static bool saveCfgDoc(StaticJsonDocument<2048>& doc) {
-        String out; serializeJson(doc, out);
-        return saveConfigJson(out);
-    }
-
-    static void loadCfgDoc(StaticJsonDocument<2048>& doc) {
-        String json;
-        if (loadConfigJson(json)) deserializeJson(doc, json);
-    }
-
+    // updateConfigJson() liest den aktuellen Stand, ergänzt die neuen Werte
+    // und schreibt nur bei tatsächlicher Änderung zurück ins NVS.
     static bool persistLevelToConfig(int level) {
         // Speichert den zuletzt gesetzten Vent-Level (0–4) in config.json.
-        StaticJsonDocument<2048> doc; loadCfgDoc(doc);
-        doc["setLevel"] = clampCfg(level, 0, 4);
-        return saveCfgDoc(doc);
+        return updateConfigJson([&](JsonDocument& doc) {
+            doc["setLevel"] = clampInt(level, 0, 4);
+        });
     }
 
     static bool persistComfortToConfig(int tempC) {
         // Speichert die Komforttemperatur (°C) in config.json.
-        StaticJsonDocument<2048> doc; loadCfgDoc(doc);
-        doc["setComfortTempC"] = clampCfg(tempC, -40, 100);
-        return saveCfgDoc(doc);
-    }
-
-    static bool persistManualActiveToConfig(bool active) {
-        // Speichert den manuellen Modus-Zustand (true/false) in config.json.
-        StaticJsonDocument<2048> doc; loadCfgDoc(doc);
-        doc["manualActive"] = active;
-        return saveCfgDoc(doc);
+        return updateConfigJson([&](JsonDocument& doc) {
+            doc["setComfortTempC"] = clampInt(tempC, -40, 100);
+        });
     }
 
     static bool persistManualDelayToConfig(int delaySeconds) {
         // Speichert den Auto-Stop-Delay (0–600s) in config.json.
-        StaticJsonDocument<2048> doc; loadCfgDoc(doc);
-        doc["testAutoStopSec"] = clampCfg(delaySeconds, 0, 600);
-        return saveCfgDoc(doc);
+        return updateConfigJson([&](JsonDocument& doc) {
+            doc["testAutoStopSec"] = clampInt(delaySeconds, 0, 600);
+        });
     }
 
     static bool persistManualAnalogToConfig(int supply, int exhaust, int postheater) {
         // Speichert die letzten Analog-Sollwerte (0–100%) in config.json.
-        StaticJsonDocument<2048> doc; loadCfgDoc(doc);
-        doc["manualAnalogSupply"] = clampCfg(supply, 0, 100);
-        doc["manualAnalogExhaust"] = clampCfg(exhaust, 0, 100);
-        doc["manualAnalogPostheater"] = clampCfg(postheater, 0, 100);
-        return saveCfgDoc(doc);
+        return updateConfigJson([&](JsonDocument& doc) {
+            doc["manualAnalogSupply"] = clampInt(supply, 0, 100);
+            doc["manualAnalogExhaust"] = clampInt(exhaust, 0, 100);
+            doc["manualAnalogPostheater"] = clampInt(postheater, 0, 100);
+        });
     }
 
     static bool persistStatusToConfig(int preheater, int bypass, int type, int size, int options, int enthalpy, int ewt) {
         // Speichert die Anlagenkonfiguration (0x00D7-Parameter) in config.json.
-        StaticJsonDocument<2048> doc; loadCfgDoc(doc);
-        auto s = doc.createNestedObject("setStatus");
-        s["preheater"] = clampCfg(preheater, 0, 1);
-        s["bypass"] = clampCfg(bypass, 0, 1);
-        s["type"] = clampCfg(type, 1, 2);
-        s["size"] = clampCfg(size, 1, 2);
-        s["options"] = clampCfg(options, 0, 255);
-        s["enthalpy"] = clampCfg(enthalpy, 0, 2);
-        s["ewt"] = clampCfg(ewt, 0, 2);
-        return saveCfgDoc(doc);
+        return updateConfigJson([&](JsonDocument& doc) {
+            auto s = doc.createNestedObject("setStatus");
+            s["preheater"] = clampInt(preheater, 0, 1);
+            s["bypass"] = clampInt(bypass, 0, 1);
+            s["type"] = clampInt(type, 1, 2);
+            s["size"] = clampInt(size, 1, 2);
+            s["options"] = clampInt(options, 0, 255);
+            s["enthalpy"] = clampInt(enthalpy, 0, 2);
+            s["ewt"] = clampInt(ewt, 0, 2);
+        });
     }
 
     static bool persistVentToConfig(int ea, int el, int em, int sa, int sl, int sm, int eh, int sh) {
         // Speichert die Ventilationsstufenprozente in config.json.
-        StaticJsonDocument<2048> doc; loadCfgDoc(doc);
-        auto v = doc.createNestedObject("setVent");
-        v["exhaustAbsent"] = clampCfg(ea, 0, 100);
-        v["exhaustLow"] = clampCfg(el, 0, 100);
-        v["exhaustMedium"] = clampCfg(em, 0, 100);
-        v["supplyAbsent"] = clampCfg(sa, 0, 100);
-        v["supplyLow"] = clampCfg(sl, 0, 100);
-        v["supplyMedium"] = clampCfg(sm, 0, 100);
-        v["exhaustHigh"] = clampCfg(eh, 0, 100);
-        v["supplyHigh"] = clampCfg(sh, 0, 100);
-        return saveCfgDoc(doc);
+        return updateConfigJson([&](JsonDocument& doc) {
+            auto v = doc.createNestedObject("setVent");
+            v["exhaustAbsent"] = clampInt(ea, 0, 100);
+            v["exhaustLow"] = clampInt(el, 0, 100);
+            v["exhaustMedium"] = clampInt(em, 0, 100);
+            v["supplyAbsent"] = clampInt(sa, 0, 100);
+            v["supplyLow"] = clampInt(sl, 0, 100);
+            v["supplyMedium"] = clampInt(sm, 0, 100);
+            v["exhaustHigh"] = clampInt(eh, 0, 100);
+            v["supplyHigh"] = clampInt(sh, 0, 100);
+        });
     }
 
     static bool tryParseIntLoose(const String& in, const char* key, int& out) {
@@ -135,24 +112,25 @@ namespace {
 
         return false;
     }
-    static String normalizeTopicPrefix(String p) {
-        p.trim();
-        while (p.startsWith("/")) p.remove(0, 1);
-        while (p.endsWith("/")) p.remove(p.length() - 1, 1);
-        if (p.isEmpty()) p = "comfoair";
-        return p;
-    }
 }
 
-static String toHex(const std::vector<uint8_t>& v) {
-    // Wandelt einen Byte-Vektor in einen HEX-String um (z.B. für Logging).
-    static const char* k = "0123456789ABCDEF";
-    String s; s.reserve(v.size() * 2);
-    for (uint8_t b : v) { s += k[b >> 4]; s += k[b & 0x0F]; }
-    return s;
+namespace {
+// RAII-Sperre für eine RS232-Transaktion (rekursiv: verschachtelte sendCommand()-Aufrufe sind erlaubt)
+struct IoLock {
+    SemaphoreHandle_t m;
+    bool ok;
+    explicit IoLock(SemaphoreHandle_t mtx, uint32_t timeoutMs = 4000)
+        : m(mtx), ok(mtx && xSemaphoreTakeRecursive(mtx, pdMS_TO_TICKS(timeoutMs)) == pdTRUE) {}
+    ~IoLock() { if (ok) xSemaphoreGiveRecursive(m); }
+    IoLock(const IoLock&) = delete;
+    IoLock& operator=(const IoLock&) = delete;
+};
 }
 
-ComfoAirDriver::ComfoAirDriver(HardwareSerial& port) : _serial(&port), _ready(false) {}
+ComfoAirDriver::ComfoAirDriver(HardwareSerial& port) : _serial(&port), _ready(false) {
+    _ioMutex = xSemaphoreCreateRecursiveMutex();
+    _mqttCfgMutex = xSemaphoreCreateMutex();
+}
 
 bool ComfoAirDriver::begin(uint32_t baud, int8_t rxPin, int8_t txPin) {
 	_serial->begin(baud, SERIAL_8N1, rxPin, txPin);
@@ -282,7 +260,7 @@ bool ComfoAirDriver::readFrame(uint16_t& command, std::vector<uint8_t>& data, ui
 			break;
 		case END_LO:
 			if (b != CA_END_LO) return false;
-			data = rawData;
+			data = std::move(rawData);
 			AWM_LOGD("Rx cmd=0x%04X len=%u", command, static_cast<unsigned>(data.size()));
 			return true;
 		}
@@ -302,6 +280,12 @@ bool ComfoAirDriver::sendCommand(uint16_t command,
         return false;
     }
 
+    IoLock lock(_ioMutex);
+    if (!lock.ok) {
+        AWM_LOGW("RS232 belegt – cmd=0x%04X übersprungen", command);
+        return false;
+    }
+
     while (_serial->available()) _serial->read();
 
     writeFrame(command, payload); // FIX
@@ -317,179 +301,8 @@ bool ComfoAirDriver::sendCommand(uint16_t command,
     return ok;
 }
 
-// 7.0
-bool ComfoAirDriver::getBootloaderVersion(std::vector<uint8_t>& response) {
-    uint16_t rc; return sendCommand(0x0067, {}, rc, response);
-}
-bool ComfoAirDriver::getFirmwareVersion(std::vector<uint8_t>& response) {
-    uint16_t rc; return sendCommand(0x0069, {}, rc, response);
-}
-bool ComfoAirDriver::getConnectorBoardVersion(std::vector<uint8_t>& response) {
-    uint16_t rc; return sendCommand(0x00A1, {}, rc, response);
-}
 bool ComfoAirDriver::setRs232Mode(uint8_t mode, std::vector<uint8_t>& response) {
     uint16_t rc; return sendCommand(0x009B, { mode }, rc, response);
-}
-
-// 8.0
-// 0x0033 – Daten abrufen (liefert Antwort-Kommando + Payload roh)
-bool ComfoAirDriver::easeRequestData(uint16_t& responseCommand,
-                                     std::vector<uint8_t>& responsePayload) {
-    return sendCommand(0x0033, {}, responseCommand, responsePayload);
-}
-
-// Kompatibilitäts-Wrapper: nur Payload zurückgeben
-bool ComfoAirDriver::easeGetData(std::vector<uint8_t>& response) {
-	uint16_t rc;
-	return easeRequestData(rc, response);
-}
-
-// 0x0035 – CC-Ease Parameter
-bool ComfoAirDriver::easeSetParams(const ComfoEaseParams& params) {
-	std::vector<uint8_t> payload;
-	payload.reserve(5);
-	// Byte[1] RTC Tag (0=Sa,1=So,2=Mo,3=Di,4=Mi,5=Do,6=Fr)
-	payload.push_back(params.rtcDay);
-	// Byte[2] RTC Stunde (0..23)
-	payload.push_back(params.rtcHour);
-	// Byte[3] RTC Minute (0..59)
-	payload.push_back(params.rtcMinute);
-	// Byte[4] Temperatur (°C*) Rohwert, z.B. (T+20)*2
- payload.push_back(static_cast<uint8_t>(params.tempRaw));
-	// Byte[5] Version CC-Ease (Bits 7..4=Major, 3..0=Minor)
-	payload.push_back(params.versionEase);
-
-	uint16_t rc;
-	std::vector<uint8_t> resp;
-	return sendCommand(0x0035, payload, rc, resp); // Antwort 0x003C (Display), hier nicht dekodiert
-}
-
-// 0x0037 – CC-Ease Tasten Status
-bool ComfoAirDriver::easeSendKeyStatus(const ComfoEaseKeyStatus& keys) {
-	std::vector<uint8_t> payload;
-	payload.reserve(7);
-	// Byte[1] Ventilator (0..255 = 0..4080 ms)
-	payload.push_back(keys.ventMs);
-	// Byte[2] Modus
-	payload.push_back(keys.modeMs);
-	// Byte[3] Uhr
-	payload.push_back(keys.clockMs);
-	// Byte[4] Temperatur
-	payload.push_back(keys.tempMs);
-	// Byte[5] Plus
-	payload.push_back(keys.plusMs);
-	// Byte[6] Minus
- payload.push_back(keys.minusMs);
-	// Byte[7] Status-Bits (Bit0 = Blinken an/aus)
-	payload.push_back(keys.status);
-
-	uint16_t rc;
-	std::vector<uint8_t> resp;
-	return sendCommand(0x0037, payload, rc, resp); // Antwort 0x003C
-}
-
-// 0x0039 – Empfangenes RF Kommando weiterleiten
-bool ComfoAirDriver::easeSendRfCommand(const ComfoRfRxCommand& cmd) {
-	std::vector<uint8_t> payload;
-	payload.reserve(16);
-	// Byte[1] Modul Typ Empfänger
-	payload.push_back(cmd.receiverType);
-	// Byte[2] Modul ID Empfänger
-	payload.push_back(cmd.receiverId);
-	// Byte[3] Modul Typ Sender
-	payload.push_back(cmd.senderType);
-	// Byte[4] Modul ID Sender
-	payload.push_back(cmd.senderId);
-	// Byte[5] Lifetime
-	payload.push_back(cmd.lifetime);
-	// Byte[6] Datentyp
-	payload.push_back(cmd.dataType);
-	// Byte[7..16] Datenbyte 1..10
-	for (size_t i = 0; i < 10; ++i) payload.push_back(cmd.data[i]);
-
-	uint16_t rc;
-	std::vector<uint8_t> resp;
-	return sendCommand(0x0039, payload, rc, resp); // Antwort 0x0040
-}
-
-// Bestehende Roh-Variante für Payload (falls noch verwendet)
-bool ComfoAirDriver::easeSetParams(const std::vector<uint8_t>& payload) {
-	uint16_t rc; std::vector<uint8_t> resp;
-	return sendCommand(0x0035, payload, rc, resp);
-}
-
-// 7.0 Allgemein – komfortable Getter
-
-// Hilfsfunktion: rohen Versions-Puffer (0x0068/0x006A) in ComfoVersionInfo dekodieren
-static bool parseVersionVector(const std::vector<uint8_t>& resp, ComfoVersionInfo& info) {
-	// Erwartet: mind. 13 Bytes: [1]=maj, [2]=min, [3]=beta, [4..13]=Name
-	if (resp.size() < 13) return false;
-
-	info.versionMajor = resp[0];  // Byte[1] Version Major
-	info.versionMinor = resp[1];  // Byte[2] Version Minor
-	info.beta         = resp[2];  // Byte[3] Beta
-
-	// Byte[4..13] = Gerätename (10 ASCII-Zeichen)
-	for (size_t i = 0; i < 10; ++i) {
-    info.deviceName[i] = static_cast<char>(resp[2 + i]);
-}
-	info.deviceName[10] = '\0';
-
-	return true;
-}
-
-bool ComfoAirDriver::getBootloaderVersionInfo(ComfoVersionInfo& info) {
-	std::vector<uint8_t> resp;
-	uint16_t rc;
-	// 0x0067 (PC an ComfoAir) → Antwort 0x0068 mit Versions-Daten
-	if (!sendCommand(0x0067, {}, rc, resp)) return false;
-	// optional: prüfen, ob rc == 0x0068 ist
-	return parseVersionVector(resp, info);
-}
-
-bool ComfoAirDriver::getFirmwareVersionInfo(ComfoVersionInfo& info) {
-	std::vector<uint8_t> resp;
-	uint16_t rc;
-	// 0x0069 (PC an ComfoAir) → Antwort 0x006A mit Firmware-Version
-	if (!sendCommand(0x0069, {}, rc, resp)) return false;
-	// optional: prüfen, ob rc == 0x006A ist
-	return parseVersionVector(resp, info);
-}
-
-bool ComfoAirDriver::getConnectorBoardVersionInfo(ComfoConnectorVersionInfo& info) {
-	std::vector<uint8_t> resp;
-	uint16_t rc;
-	// 0x00A1 (PC an ComfoAir) → Antwort 0x00A2 mit Konnektorplatinen-Version
-	if (!sendCommand(0x00A1, {}, rc, resp)) return false;
-	// Erwartetes Format:
-	// Byte[1]  = Version Major
-	// Byte[2]  = Version Minor
-	// Byte[3–12] = Gerätename (10 ASCII)
-	// Byte[13] = Version CC-Ease (Bits 7..4=Major, 3..0=Minor)
-	// Byte[14] = Version CC-Luxe (Bits 7..4=Major, 3..0=Minor)
-	if (resp.size() < 14) return false;
-
-	info.versionMajor = resp[0];  // Byte[1]
-	info.versionMinor = resp[1];  // Byte[2]
-
-	// Gerätename aus Byte[3..12]
-	for (size_t i = 0; i < 10; ++i) {
-    info.deviceName[i] = static_cast<char>(resp[2 + i]);
-}
-	info.deviceName[10] = '\0';
-
-	uint8_t ease = resp[12];      // Byte[13] Version CC-Ease
-	uint8_t luxe = resp[13];      // Byte[14] Version CC-Luxe
-
-	// CC-Ease: Bit 7..4 = Major, Bit 3..0 = Minor
-	info.ccEaseMajor = (ease >> 4) & 0x0F;
-	info.ccEaseMinor = ease & 0x0F;
-
-	// CC-Luxe: Bit 7..4 = Major, Bit 3..0 = Minor
-	info.ccLuxeMajor = (luxe >> 4) & 0x0F;
-	info.ccLuxeMinor = luxe & 0x0F;
-
-	return true;
 }
 
 // Nur den aktuellen RS232-Status (Byte[1] der 0x009C-Antwort) lesen
@@ -819,35 +632,6 @@ bool ComfoAirDriver::getPreheatStatusE1(ComfoPreheatStatusE1& out) {
 	return true;
 }
 
-bool ComfoAirDriver::getRfStatusE5(ComfoRfStatusE5& out) {
-	std::vector<uint8_t> resp;
-	uint16_t rc;
-	if (!sendCommand(0x00E5, {}, rc, resp)) return false;
-	if (resp.size() < 7) return false;
-	out.rfAddr4       = resp[0]; // Low
-	out.rfAddr3       = resp[1];
-	out.rfAddr2       = resp[2];
-	out.rfAddr1       = resp[3]; // High (hier als 8 Bit, bei Bedarf 16 Bit bauen)
-	out.rfId          = resp[4];
-	out.modulePresent = resp[5];
-	out.selfLearning  = resp[6];
-	AWM_LOGI("RF E5: addr=%u.%u.%u.%u id=%u present=%u learn=%u",
-             out.rfAddr1, out.rfAddr2, out.rfAddr3, out.rfAddr4, out.rfId, out.modulePresent, out.selfLearning);
-	return true;
-}
-
-bool ComfoAirDriver::getPreheatHistoryE9(ComfoPreheatHistoryE9& out) {
-	std::vector<uint8_t> resp;
-	uint16_t rc;
-	if (!sendCommand(0x00E9, {}, rc, resp)) return false;
-	if (resp.size() < 8) return false;
-	for (size_t i = 0; i < 8; ++i) out.values[i] = static_cast<int8_t>(resp[i]);
-	AWM_LOGI("PreheatHistE9: %d,%d,%d,%d,%d,%d,%d,%d",
-             out.values[0], out.values[1], out.values[2], out.values[3],
-             out.values[4], out.values[5], out.values[6], out.values[7]);
-	return true;
-}
-
 bool ComfoAirDriver::getEwtStatusEB(ComfoEwtStatusEB& out) {
 	std::vector<uint8_t> resp;
 	uint16_t rc;
@@ -866,40 +650,15 @@ bool ComfoAirDriver::getEwtStatusEB(ComfoEwtStatusEB& out) {
 	return true;
 }
 
-// 8.1 – Dekoder
-
-bool ComfoAirDriver::parseParams38(const std::vector<uint8_t>& p, ComfoParams38& out) const {
-    if (p.size() < 5) return false;
-    out.rtcDay            = p[0]; // Byte[1]
-    out.rtcHour           = p[1]; // Byte[2]
-    out.rtcMinute         = p[2]; // Byte[3]
-    out.backlightTimeout  = p[3]; // Byte[4] (fest 30)
-    out.backlightLevel    = p[4]; // Byte[5] (fest 100%)
-    return true;
-}
-
-bool ComfoAirDriver::parseDisplay3C(const std::vector<uint8_t>& p, ComfoDisplayState& out) const {
-    if (p.size() < 10) return false;
-    out.b1  = p[0];  // Byte[1] Tage/Doppelpunkt
-    out.b2  = p[1];  // Byte[2] 1A/1B/1C + AUTO/MANUAL/FILTER/I/E
-    out.b3  = p[2];  // Byte[3] 2A..2G + FAN
-    out.b4  = p[3];  // Byte[4] 3A..3G + Küchenhaube
-    out.b5  = p[4];  // Byte[5] 4A..4G + Vorheizung
-    out.b6  = p[5];  // Byte[6] 5A..5G + Frost
-    out.b7  = p[6];  // Byte[7] 6A..6G + EWT
-    out.b8  = p[7];  // Byte[8] 7A..7G + Nachheizung
-    out.b9  = p[8];  // Byte[9] 8A..8G + Punkt
-    out.b10 = p[9];  // Byte[10] Grad/Bypass/X1/X2/X3/Haus/Zuluft/Abluft
-    return true;
-}
-
 // 0x0099 – Ventilationsstufe setzen
 bool ComfoAirDriver::setLevel(uint8_t level) {
     std::vector<uint8_t> payload{ level };
     uint16_t respCmd = 0;
     std::vector<uint8_t> resp;
     // Antwort ist 0x009A mit optionalem Payload (kann leer sein)
-    return sendCommand(0x0099, payload, respCmd, resp);
+    const bool ok = sendCommand(0x0099, payload, respCmd, resp);
+    if (ok) _pollRequested = true;   // Snapshot zeitnah aktualisieren
+    return ok;
 }
 
 // 0x00D3 – Komforttemperatur in °C setzen (Hilfsfunktion)
@@ -912,6 +671,8 @@ bool ComfoAirDriver::setComfortTemperatureC(int8_t physTempC) {
     if (ok) {
         _comfortTempCmdC = physTempC;
         _comfortTempCmdValid = true;
+        _pollRequested = true;
+        _mqttDirty = true;
     }
     return ok;
 }
@@ -922,6 +683,9 @@ bool ComfoAirDriver::setComfortTemperatureRaw(uint8_t tempRaw) {
         AWM_LOGE("RS232 nicht bereit – ist die serielle Verbindung gesteckt?");
         return false;
     }
+
+    IoLock lock(_ioMutex);
+    if (!lock.ok) return false;
 
     // 1) Standardweg: ACK + Antwortframe (0x00D4)
     {
@@ -947,29 +711,33 @@ bool ComfoAirDriver::setComfortTemperatureRaw(uint8_t tempRaw) {
 }
 
 bool ComfoAirDriver::pollAll(uint32_t minIntervalMs, bool force) {
-    serviceTestModeAutoStop();
+    serviceManualModeAutoStop();
     uint32_t now = millis();
-    if (!force && now - _lastPoll < minIntervalMs) return _stateOk;
+    const bool requested = _pollRequested;
+    if (!force && !requested && now - _lastPoll < minIntervalMs) return _stateOk;
+    _pollRequested = false;
     _lastPoll = now;
+    _mqttDirty = true; // Snapshots ändern sich -> nächster mqttLoop() veröffentlicht
 
-    // Primäre Reads
-    _fanValid        = getFanStatus(_fan);
-    _tempsValid      = getTemperatureStatus(_temps);
-    _ainValid        = getAnalogInputs(_ain);
-    _ventValid       = getVentilationLevel(_vent);
-    bool inputsOk    = getInputs(_inputs);
-    bool sens97Ok    = getSensorData97(_sens97);
-    _anlagenconfValid= getAnlagenconf(_anlagenconf);
-    bool ewtOk       = getEwtStatusEB(_ewt);
-    _flapValid       = getFlapStatus(_flap);
-    _bypassValid     = getBypassStatusDF(_bypass);
-    _preheatValid    = getPreheatStatusE1(_preheat);
-    bool runtimeOk   = getRuntimeDD(_runtime);
-    bool errorsOk    = getErrorsD9(_errors);
+    // Schnelle Werte: jeder Zyklus
+    _fanValid   = getFanStatus(_fan);
+    _tempsValid = getTemperatureStatus(_temps);
 
-    _analogCfgValid  = getAnalogConfig(_analogCfg);
-    _delayValid      = getDelayTimes(_delay);
-    _keyStatusValid  = getKeyStatus(_keyStatus);
+    // Antwortet die Anlage gar nicht (RS232 nicht gesteckt/Anlage aus), den Zyklus abkürzen,
+    // statt den loop() mit ~15 weiteren ACK-Timeouts zu blockieren.
+    if (!_fanValid && !_tempsValid) {
+        _ainValid = _ventValid = _anlagenconfValid = _flapValid = _bypassValid = false;
+        _tempsD1Valid = false;
+        _stateOk = false;
+        AWM_LOGW("Poll: Anlage antwortet nicht (Fan/Temp) – Zyklus abgebrochen");
+        return false;
+    }
+
+    _ainValid         = getAnalogInputs(_ain);
+    _ventValid        = getVentilationLevel(_vent);
+    _anlagenconfValid = getAnlagenconf(_anlagenconf);
+    _flapValid        = getFlapStatus(_flap);
+    _bypassValid      = getBypassStatusDF(_bypass);
 
     // Optional: TempsD1
     static bool tempsD1Supported = true;
@@ -987,35 +755,130 @@ bool ComfoAirDriver::pollAll(uint32_t minIntervalMs, bool force) {
         _tempsD1Valid = false;
     }
 
-    // Optional: RS232 Mode
-    static bool rsModeSupported = true;
-    static bool rsModeWarned = false;
-    if (rsModeSupported) {
-        _rsModeValid = getRs232Mode(_rsMode);
-        if (!_rsModeValid) {
-            rsModeSupported = false;
-            if (!rsModeWarned) {
-                AWM_LOGW("RS232 Mode nicht lesbar (kein ACK) – deaktiviert");
-                rsModeWarned = true;
+    // Seltene Werte (ändern sich praktisch nie): beim ersten Mal, bei force und danach alle 60 s
+    if (force || !_slowPolled || now - _lastSlowPoll >= 60000UL) {
+        _lastSlowPoll = now;
+        _slowPolled = true;
+
+        bool inputsOk  = getInputs(_inputs);
+        bool sens97Ok  = getSensorData97(_sens97);
+        bool ewtOk     = getEwtStatusEB(_ewt);
+        _preheatValid  = getPreheatStatusE1(_preheat);
+        bool runtimeOk = getRuntimeDD(_runtime);
+        bool errorsOk  = getErrorsD9(_errors);
+        _analogCfgValid = getAnalogConfig(_analogCfg);
+        _delayValid     = getDelayTimes(_delay);
+        _keyStatusValid = getKeyStatus(_keyStatus);
+
+        // Optional: RS232 Mode
+        static bool rsModeSupported = true;
+        static bool rsModeWarned = false;
+        if (rsModeSupported) {
+            _rsModeValid = getRs232Mode(_rsMode);
+            if (!_rsModeValid) {
+                rsModeSupported = false;
+                if (!rsModeWarned) {
+                    AWM_LOGW("RS232 Mode nicht lesbar (kein ACK) – deaktiviert");
+                    rsModeWarned = true;
+                }
             }
+        } else {
+            _rsModeValid = false;
         }
-    } else {
-        _rsModeValid = false;
+
+        _slowOk = inputsOk && sens97Ok && ewtOk && _preheatValid && runtimeOk && errorsOk
+               && _analogCfgValid && _delayValid && _keyStatusValid;
     }
 
     // Global nur für Diagnose/Kompatibilität
-    bool ok = true;
-    ok &= _fanValid && _tempsValid && _ainValid && _ventValid;
-    ok &= inputsOk && sens97Ok && _anlagenconfValid && ewtOk;
-    ok &= _flapValid && _bypassValid && _preheatValid;
-    ok &= runtimeOk && errorsOk;
-    ok &= _analogCfgValid && _delayValid && _keyStatusValid;
-
-    _stateOk = ok;
-    if (!ok) AWM_LOGW("Poll teilweise/komplett fehlgeschlagen (Best-Effort aktiv)");
-    return ok;
+    const bool fastOk = _fanValid && _tempsValid && _ainValid && _ventValid
+                     && _anlagenconfValid && _flapValid && _bypassValid;
+    _stateOk = fastOk && _slowOk;
+    if (!_stateOk) AWM_LOGW("Poll teilweise fehlgeschlagen (Best-Effort aktiv)");
+    return _stateOk;
 }
 
+// JSON für /api/comfo/state aus den gepollten Snapshots – ohne eigenen RS232-Zugriff.
+bool ComfoAirDriver::fillStateJson(JsonDocument& doc) {
+    auto decodeTemp = [](int8_t raw) { return (static_cast<float>(raw) / 2.0f) - 20.0f; };
+
+    const bool core = _fanValid && _tempsValid && _ventValid && _flapValid && _bypassValid && _anlagenconfValid;
+    doc["ok"] = core;
+    doc["stateOk"] = _stateOk;
+    doc["ageMs"] = millis() - _lastPoll;
+    doc["manualModeActive"] = _manualModeActive;
+
+    if (_tempsValid) {
+        auto t = doc.createNestedObject("temps");
+        t["t1"] = decodeTemp(_temps.t1Outside);
+        t["t2"] = decodeTemp(_temps.t2Supply);
+        t["t3"] = decodeTemp(_temps.t3Exhaust);
+        t["t4"] = decodeTemp(_temps.t4Outlet);
+        if (_tempsD1Valid) t["comfortC"] = decodeTemp(_tempsD1.comfortTemp);
+        else if (_comfortTempCmdValid) t["comfortC"] = _comfortTempCmdC;
+    }
+
+    if (_fanValid) {
+        auto f = doc.createNestedObject("fan");
+        f["supplyPct"] = _fan.supplyPercent; f["exhaustPct"] = _fan.exhaustPercent;
+        f["supplyRpm"] = _fan.supplyRpm;     f["exhaustRpm"] = _fan.exhaustRpm;
+    }
+
+    if (_ventValid) {
+        auto v = doc.createNestedObject("vent");
+        v["current"]       = _vent.currentLevel;
+        v["supplyCur"]     = _vent.supplyCurrent;
+        v["exhaustCur"]    = _vent.exhaustCurrent;
+        v["supplyHigh"]    = _vent.supplyHigh;
+        v["exhaustHigh"]   = _vent.exhaustHigh;
+        v["exhaustAbsent"] = _vent.exhaustAbsent;
+        v["exhaustLow"]    = _vent.exhaustLow;
+        v["exhaustMedium"] = _vent.exhaustMedium;
+        v["supplyAbsent"]  = _vent.supplyAbsent;
+        v["supplyLow"]     = _vent.supplyLow;
+        v["supplyMedium"]  = _vent.supplyMedium;
+    }
+
+    if (_bypassValid) {
+        auto b = doc.createNestedObject("bypass");
+        b["factor"] = _bypass.factor;
+        b["stage"] = _bypass.stage;
+        b["correction"] = _bypass.correction;
+        b["summerMode"] = _bypass.summerMode;
+    }
+
+    if (_anlagenconfValid) {
+        auto s = doc.createNestedObject("statusD5");
+        s["preheaterPresent"] = _anlagenconf.preheaterPresent;
+        s["bypassPresent"]    = _anlagenconf.bypassPresent;
+        s["type"]             = _anlagenconf.type;
+        s["size"]             = _anlagenconf.size;
+        s["options"]          = _anlagenconf.options;
+        s["activeStatus1"]    = _anlagenconf.activeStatus1;
+        s["activeStatus2"]    = _anlagenconf.activeStatus2;
+        s["activeStatus3"]    = _anlagenconf.activeStatus3;
+        s["enthalpyPresent"]  = _anlagenconf.enthalpyPresent;
+        s["ewtPresent"]       = _anlagenconf.ewtPresent;
+    }
+
+    if (_flapValid) {
+        auto fl = doc.createNestedObject("flap");
+        fl["bypassPercent"]  = _flap.bypassPercent;
+        fl["preheaterState"] = _flap.preheaterState;
+        fl["bypassAdc"]      = _flap.bypassAdc;
+        fl["preheaterAdc"]   = _flap.preheaterAdc;
+    }
+
+    auto m = doc.createNestedObject("manual");
+    m["active"] = _manualModeActive;
+    m["requestedBypass"] = _manualRequestedBypass;
+    m["requestedPreheater"] = _manualRequestedPreheater;
+    m["requestedBypassText"] = getManualRequestedBypassText();
+    m["requestedPreheaterText"] = getManualRequestedPreheaterText();
+
+    if (_rsModeValid) doc["rs232Mode"] = _rsMode;
+    return core;
+}
 bool ComfoAirDriver::mqttInit(WiFiClient& net, const ComfoMqttConfig& cfg) {
     _net = &net;
     applyMqttCfgOwned(cfg);
@@ -1038,10 +901,6 @@ void ComfoAirDriver::mqttSetEnabled(bool enabled) {
     }
 }
 
-bool ComfoAirDriver::mqttIsEnabled() const {
-    return _mqttEnabled;
-}
-
 void ComfoAirDriver::mqttThunk(char* topic, uint8_t* payload, unsigned int length) {
     if (_cbInstance) _cbInstance->onMqttMessage(topic, payload, length);
 }
@@ -1055,13 +914,17 @@ void ComfoAirDriver::onMqttMessage(char* topic, uint8_t* payload, unsigned int l
     for (unsigned i = 0; i < length; i++) msg += (char)payload[i];
     msg.trim();
 
-    const String b = String(_mqttCfg.topicPrefix);
+    const String& b = _mqttTopicPrefixS;
 
     AWM_LOGI("MQTT RX topic='%s' payload='%s'", t.c_str(), msg.c_str());
 
-    auto publishCmdResult = [&](const String& cmd, bool ok, const String& err = "") {
+    // Kommando = Topic ohne "<prefix>/cmd/"; leer bei fremdem Topic.
+    const String cmdBase = b + "/cmd/";
+    const String cmd = t.startsWith(cmdBase) ? t.substring(cmdBase.length()) : String();
+
+    auto publishCmdResult = [&](const String& name, bool ok, const String& err = "") {
         StaticJsonDocument<192> d;
-        d["cmd"] = cmd;
+        d["cmd"] = name;
         d["ok"] = ok;
         if (!ok && err.length()) d["error"] = err;
         String out; serializeJson(d, out);
@@ -1076,7 +939,7 @@ void ComfoAirDriver::onMqttMessage(char* topic, uint8_t* payload, unsigned int l
     // -------------------------------------------------------------------------
     // level (wie HTML-API: 0..4)
     // -------------------------------------------------------------------------
-    if (t == b + "/cmd/level/bereich") {
+    if (cmd == "level/bereich") {
         int level = -1;
 
         // akzeptiert {"level":2}, "level":2, 2
@@ -1117,7 +980,7 @@ void ComfoAirDriver::onMqttMessage(char* topic, uint8_t* payload, unsigned int l
     // -------------------------------------------------------------------------
     // comfort (wie HTML-API: clamp -40..100)
     // -------------------------------------------------------------------------
-    if (t == b + "/cmd/comfort/bereich" || t == b + "/cmd/comfort" || t == b + "/cmd/comfort/json") {
+    if (cmd == "comfort/bereich" || cmd == "comfort" || cmd == "comfort/json") {
         int tempC = INT_MIN;
 
         StaticJsonDocument<128> d;
@@ -1147,10 +1010,7 @@ void ComfoAirDriver::onMqttMessage(char* topic, uint8_t* payload, unsigned int l
         }
 
         bool ok = setComfortTemperatureC((int8_t)tempC);
-        if (ok) {
-            pollAll(0, true);
-            mqttPublishState();
-        }
+        if (ok) requestPoll(); // Poll + Publish im nächsten loop()-Durchlauf
         publishCmdResult("comfort", ok, ok ? "" : "setComfort failed");
         return;
     }
@@ -1158,7 +1018,7 @@ void ComfoAirDriver::onMqttMessage(char* topic, uint8_t* payload, unsigned int l
     // -------------------------------------------------------------------------
     // rs232Mode (0..4)
     // -------------------------------------------------------------------------
-    if (t == b + "/cmd/rs232Mode/bereich") {
+    if (cmd == "rs232Mode/bereich") {
         StaticJsonDocument<128> d;
         if (!parseJsonObj(d)) { publishCmdResult("rs232Mode", false, "invalid json object"); return; }
 
@@ -1173,7 +1033,7 @@ void ComfoAirDriver::onMqttMessage(char* topic, uint8_t* payload, unsigned int l
     // -------------------------------------------------------------------------
     // manual start/end
     // -------------------------------------------------------------------------
-    if (t == b + "/cmd/manual/bereich") {
+    if (cmd == "manual/bereich") {
         StaticJsonDocument<192> d;
         if (!parseJsonObj(d)) { publishCmdResult("manual", false, "invalid json object"); return; }
 
@@ -1197,7 +1057,7 @@ void ComfoAirDriver::onMqttMessage(char* topic, uint8_t* payload, unsigned int l
     // -------------------------------------------------------------------------
     // manual flaps (bypass/preheater: 0/1/3, delay 0..600)
     // -------------------------------------------------------------------------
-    if (t == b + "/cmd/manual/flaps/bereich") {
+    if (cmd == "manual/flaps/bereich") {
         StaticJsonDocument<256> d;
         if (!parseJsonObj(d)) { publishCmdResult("manual/flaps", false, "invalid json object"); return; }
 
@@ -1232,7 +1092,7 @@ void ComfoAirDriver::onMqttMessage(char* topic, uint8_t* payload, unsigned int l
     // -------------------------------------------------------------------------
     // manual analog (0..100)
     // -------------------------------------------------------------------------
-    if (t == b + "/cmd/manual/analog/bereich") {
+    if (cmd == "manual/analog/bereich") {
         StaticJsonDocument<256> d;
         if (!parseJsonObj(d)) { publishCmdResult("manual/analog", false, "invalid json object"); return; }
 
@@ -1254,8 +1114,7 @@ void ComfoAirDriver::onMqttMessage(char* topic, uint8_t* payload, unsigned int l
         bool ok = setManualAnalog((uint8_t)s, (uint8_t)e, (uint8_t)p);
         if (ok) {
             persistManualAnalogToConfig(s, e, p);
-            pollAll(0, true);
-            mqttPublishState();
+            requestPoll(); // Poll + Publish im nächsten loop()-Durchlauf
         }
         publishCmdResult("manual/analog", ok, ok ? "" : "setManualAnalog failed");
         return;
@@ -1264,7 +1123,7 @@ void ComfoAirDriver::onMqttMessage(char* topic, uint8_t* payload, unsigned int l
     // -------------------------------------------------------------------------
     // status (Pflichtfelder + Range wie HTML-API)
     // -------------------------------------------------------------------------
-    if (t == b + "/cmd/status/bereich") {
+    if (cmd == "status/bereich") {
         StaticJsonDocument<384> d;
         if (!parseJsonObj(d)) { publishCmdResult("status", false, "invalid json object"); return; }
 
@@ -1301,8 +1160,7 @@ void ComfoAirDriver::onMqttMessage(char* topic, uint8_t* payload, unsigned int l
 
         if (ok) {
             persistStatusToConfig(preheater, bypass, type, size, options, enthalpy, ewt);
-            pollAll(0, true);
-            mqttPublishState();
+            requestPoll(); // Poll + Publish im nächsten loop()-Durchlauf
         }
         publishCmdResult("status", ok, ok ? "" : "setStatus failed");
         return;
@@ -1311,7 +1169,7 @@ void ComfoAirDriver::onMqttMessage(char* topic, uint8_t* payload, unsigned int l
     // -------------------------------------------------------------------------
     // vent (Pflichtfelder + 0..100 wie HTML-API)
     // -------------------------------------------------------------------------
-    if (t == b + "/cmd/vent/bereich") {
+    if (cmd == "vent/bereich") {
         StaticJsonDocument<384> d;
         if (!parseJsonObj(d)) { publishCmdResult("vent", false, "invalid json object"); return; }
 
@@ -1350,8 +1208,7 @@ void ComfoAirDriver::onMqttMessage(char* topic, uint8_t* payload, unsigned int l
 
         if (ok) {
             persistVentToConfig(ea, el, em, sa, sl, sm, eh, sh);
-            pollAll(0, true);
-            mqttPublishState();
+            requestPoll(); // Poll + Publish im nächsten loop()-Durchlauf
         }
         publishCmdResult("vent", ok, ok ? "" : "setVentilationLevels failed");
         return;
@@ -1360,7 +1217,7 @@ void ComfoAirDriver::onMqttMessage(char* topic, uint8_t* payload, unsigned int l
     // -------------------------------------------------------------------------
     // levelStep (zusätzlicher MQTT-Komfortbefehl)
     // -------------------------------------------------------------------------
-    if (t == b + "/cmd/levelStep/bereich") {
+    if (cmd == "levelStep/bereich") {
         StaticJsonDocument<128> d;
         if (!parseJsonObj(d)) { publishCmdResult("levelStep", false, "invalid json object"); return; }
 
@@ -1425,11 +1282,7 @@ bool ComfoAirDriver::mqttEnsureConnected() {
     if (millis() - _lastMqttReconnect < 3000) return false;
     _lastMqttReconnect = millis();
 
-    String b = _mqttCfg.topicPrefix ? _mqttCfg.topicPrefix : "";
-    b.trim();
-    while (b.startsWith("/")) b.remove(0, 1);
-    while (b.endsWith("/")) b.remove(b.length() - 1, 1);
-    if (b.isEmpty()) b = "comfoair";
+    const String& b = _mqttTopicPrefixS; // bereits normalisiert (applyMqttCfgOwned)
 
     const String onlineTopic = b + "/status/system/json";
 
@@ -1470,13 +1323,6 @@ bool ComfoAirDriver::mqttEnsureConnected() {
     };
     static_assert(sizeof(kCmdTopicSuffixes) / sizeof(kCmdTopicSuffixes[0]) > 0, "No MQTT command topics configured");
 
-    auto isKnownCmdTopic = [&](const String& topic) -> bool {
-        for (auto s : kCmdTopicSuffixes) {
-            if (topic == b + s) return true;
-        }
-        return false;
-    };
-
     for (size_t i = 0; i < sizeof(kCmdTopicSuffixes) / sizeof(kCmdTopicSuffixes[0]); ++i) {
         sub(b + kCmdTopicSuffixes[i]);
     }
@@ -1485,8 +1331,8 @@ bool ComfoAirDriver::mqttEnsureConnected() {
     _mqtt.publish(onlineTopic.c_str(), "{\"online\":1}", true);
     _mqtt.publish((b + "/status/command/bereich").c_str(), "{\"cmd\":\"\",\"ok\":true}", true);
 
-    pollAll(0, true);
-    mqttPublishState();
+    // Cache ist leer -> der nächste mqttPublishState() sendet den kompletten Snapshot.
+    _mqttDirty = true;
 
     AWM_LOGI("MQTT verbunden");
     return true;
@@ -1500,6 +1346,8 @@ bool ComfoAirDriver::setStatus(uint8_t preheaterPresent,
     uint8_t enthalpyPresent,
     uint8_t ewtPresent) {
     if (!_ready) return false;
+    IoLock lock(_ioMutex);
+    if (!lock.ok) return false;
     while (_serial->available()) _serial->read();
 
     std::vector<uint8_t> payload{
@@ -1519,6 +1367,8 @@ bool ComfoAirDriver::setVentilationLevels(uint8_t exhaustAbsent,
     uint8_t exhaustHigh,
     uint8_t supplyHigh) {
     if (!_ready) return false;
+    IoLock lock(_ioMutex);
+    if (!lock.ok) return false;
     while (_serial->available()) _serial->read();
 
     // Protokoll: 0x00CF mit 9 Byte Payload, letztes Byte reserviert = 0x00
@@ -1530,7 +1380,9 @@ bool ComfoAirDriver::setVentilationLevels(uint8_t exhaustAbsent,
     };
 
     writeFrame(0x00CF, payload);
-    return readAck(150);
+    const bool ok = readAck(150);
+    if (ok) _pollRequested = true;
+    return ok;
 }
 
 bool ComfoAirDriver::startManualMode() {
@@ -1538,6 +1390,7 @@ bool ComfoAirDriver::startManualMode() {
     // Bei Erfolg (Antwort 0x0002): Klappenverriegelungen zurücksetzen.
     uint16_t rc = 0;
     std::vector<uint8_t> resp;
+    _mqttDirty = true;
     if (!sendCommand(0x0001, {}, rc, resp)) {
         _manualModeActive = false;
         return false;
@@ -1561,14 +1414,10 @@ bool ComfoAirDriver::endManualMode() {
         _testFlapsLatchBypass = 3;
         _testFlapsLatchPreheater = 3;
         _manualModeActive = false;
+        _mqttDirty = true;
         return true;
     }
     return false;
-}
-
-bool ComfoAirDriver::setManualOutputs(uint8_t relaisBits, uint8_t feedbackBits) {
-    uint16_t rc; std::vector<uint8_t> resp;
-    return sendCommand(0x0005, { relaisBits, feedbackBits }, rc, resp);
 }
 
 bool ComfoAirDriver::setManualAnalog(uint8_t supplyPercent, uint8_t exhaustPercent, uint8_t postheaterPercent) {
@@ -1578,6 +1427,9 @@ bool ComfoAirDriver::setManualAnalog(uint8_t supplyPercent, uint8_t exhaustPerce
 
     auto inRange = [](uint8_t v) { return v <= 100; };
     if (!inRange(supplyPercent) || !inRange(exhaustPercent) || !inRange(postheaterPercent)) return false;
+
+    IoLock lock(_ioMutex);
+    if (!lock.ok) return false;
 
     // Sicherstellen, dass manueller Modus aktiv ist
     if (!_manualModeActive) {
@@ -1611,6 +1463,9 @@ bool ComfoAirDriver::setManualFlaps(uint8_t bypass, uint8_t preheater) {
     auto valid = [](uint8_t v) { return v == 0 || v == 1 || v == 3; };
     if (!valid(bypass) || !valid(preheater)) return false;
 
+    IoLock lock(_ioMutex);
+    if (!lock.ok) return false;
+
     uint16_t rc = 0;
     std::vector<uint8_t> resp;
     if (!sendCommand(0x0009, { bypass, preheater }, rc, resp)) {
@@ -1626,6 +1481,7 @@ bool ComfoAirDriver::setManualFlaps(uint8_t bypass, uint8_t preheater) {
     // "3" (stop/unverriegelt) setzt NICHT zurück.
     if (bypass == 0 || bypass == 1) _manualRequestedBypass = bypass;
     if (preheater == 0 || preheater == 1) _manualRequestedPreheater = preheater;
+    _mqttDirty = true;
     return true;
 }
 
@@ -1636,6 +1492,7 @@ bool ComfoAirDriver::setManualFlapsWithAutoStop(uint8_t bypass, uint8_t preheate
     if (!setManualFlaps(bypass, preheater)) return false;
 
     _manualFlapsLastDelaySec = delaySeconds;
+    _mqttDirty = true;
 
     _testFlapsAutoStopArmed = false;
     if (delaySeconds == 0) return true; // laut Richtlinie: 0 => kein Auto-Stop
@@ -1660,6 +1517,7 @@ void ComfoAirDriver::serviceManualModeAutoStop() {
 
     if (setManualFlaps(_testFlapsAutoStopBypass, _testFlapsAutoStopPreheater)) {
         _testFlapsAutoStopArmed = false;
+        _mqttDirty = true;
     }
     else {
         _testFlapsAutoStopDueMs = millis() + 500;
@@ -1683,6 +1541,7 @@ const char* ComfoAirDriver::getManualRequestedPreheaterText() const {
     return flapReqToText(_manualRequestedPreheater);
 }
 
+// Nur aus dem loop()-Task aufrufen (PubSubClient ist nicht threadsicher).
 bool ComfoAirDriver::mqttApplyConfig(const ComfoMqttConfig& cfg, bool enabled, bool publishNow) {
     applyMqttCfgOwned(cfg);
     _mqtt.setServer(_mqttCfg.host, _mqttCfg.port);
@@ -1690,16 +1549,45 @@ bool ComfoAirDriver::mqttApplyConfig(const ComfoMqttConfig& cfg, bool enabled, b
 
     if (_mqtt.connected()) _mqtt.disconnect();
     _mqttLastByTopic.clear();
-    _lastMqttReconnect = 0;
+    _lastMqttReconnect = millis() - 3000; // sofortiger Verbindungsversuch
+    _mqttDirty = true;
 
     if (!_mqttEnabled) return true;
     if (!mqttEnsureConnected()) return false;
 
-    if (publishNow) {
-        pollAll(0, true);
-        mqttPublishState();
-    }
+    if (publishNow) mqttPublishState();
     return true;
+}
+
+// Threadsicher: merkt die neue Konfiguration vor; mqttLoop() übernimmt sie im loop()-Task.
+void ComfoAirDriver::mqttRequestConfig(const ComfoMqttConfig& cfg, bool enabled) {
+    if (!_mqttCfgMutex || xSemaphoreTake(_mqttCfgMutex, pdMS_TO_TICKS(1000)) != pdTRUE) return;
+    _pendHost = cfg.host ? cfg.host : "";
+    _pendUser = cfg.user ? cfg.user : "";
+    _pendPass = cfg.pass ? cfg.pass : "";
+    _pendClientId = cfg.clientId ? cfg.clientId : "";
+    _pendTopicPrefix = cfg.topicPrefix ? cfg.topicPrefix : "";
+    _pendPort = cfg.port;
+    _pendEnabled = enabled;
+    _mqttCfgPending = true;
+    xSemaphoreGive(_mqttCfgMutex);
+}
+
+void ComfoAirDriver::mqttApplyPendingConfig() {
+    if (!_mqttCfgPending || !_mqttCfgMutex) return;
+    if (xSemaphoreTake(_mqttCfgMutex, 0) != pdTRUE) return; // nächster Durchlauf
+
+    const String host = _pendHost, user = _pendUser, pass = _pendPass;
+    const String clientId = _pendClientId, prefix = _pendTopicPrefix;
+    const int port = _pendPort;
+    const bool enabled = _pendEnabled;
+    _mqttCfgPending = false;
+    xSemaphoreGive(_mqttCfgMutex);
+
+    const ComfoMqttConfig cfg{ host.c_str(), port, user.c_str(), pass.c_str(), clientId.c_str(), prefix.c_str() };
+    const bool ok = mqttApplyConfig(cfg, enabled, true);
+    AWM_LOGI("MQTT-Konfiguration übernommen (%s)",
+             !enabled ? "deaktiviert" : (ok ? "verbunden" : "Verbindung ausstehend"));
 }
 
 void ComfoAirDriver::applyMqttCfgOwned(const ComfoMqttConfig& cfg) {
@@ -1720,26 +1608,29 @@ void ComfoAirDriver::applyMqttCfgOwned(const ComfoMqttConfig& cfg) {
 void ComfoAirDriver::setManualAutoStopDelaySecFromConfig(uint16_t sec) {
     if (sec > 600) sec = 600;
     _manualFlapsLastDelaySec = sec;
-    if (_mqttEnabled && _mqtt.connected()) {
-        mqttPublishState();
-    }
+    _mqttDirty = true; // Publish in mqttLoop() (Aufruf kommt auch aus dem AsyncTCP-Task)
 }
 
 void ComfoAirDriver::mqttLoop() {
     serviceManualModeAutoStop();
+    mqttApplyPendingConfig();
 
     if (!_mqttEnabled) return;
-    if (WiFi.status() != WL_CONNECTED) return;
-    if (!mqttEnsureConnected()) return;
+    if (!mqttEnsureConnected()) return; // prüft auch den WiFi-Status
 
     _mqtt.loop();
-    mqttPublishState();
+
+    // Nur bei geändertem Zustand veröffentlichen (plus 1-s-Sicherheitsnetz),
+    // statt in jedem loop()-Durchlauf alle JSON-Dokumente neu aufzubauen.
+    if (_mqttDirty || millis() - _lastMqttPublish >= 1000) mqttPublishState();
 }
 
 void ComfoAirDriver::mqttPublishState() {
     if (!_mqttEnabled || !_mqtt.connected()) return;
+    _mqttDirty = false;
+    _lastMqttPublish = millis();
 
-    const String b = String(_mqttCfg.topicPrefix ? _mqttCfg.topicPrefix : "comfoair");
+    const String& b = _mqttTopicPrefixS;
 
     auto areaTopic = [&](const char* area) -> String {
         return b + "/status/" + String(area);

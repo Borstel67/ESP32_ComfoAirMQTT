@@ -24,8 +24,6 @@
 #include <FS.h>
 #include <LittleFS.h>
 #include <DNSServer.h>
-#include <vector>
-#include <initializer_list>
 #include "ComfoAirDriver.h" // falls noch nicht drin
 
 class ESPWiFiManagerAP {
@@ -56,29 +54,18 @@ public:
 	void setAutoReconnect(bool habilitado);
 
 	bool isConnected();
-	int  getSignalStrength();
-	uint64_t getTimestamp();
 	bool connectToWiFiSTA();
-	void reintentarConexionSiNecesario();
-	bool hayInternet();
 	bool tieneCredenciales() const;
-
-	bool scanRedDetectada();
-	void forzarReconexion();
 
 	void setLedAuto(bool enable);
 	void setLedPatternManual(LedPattern p);
-
-	void setProtectedJsons(std::initializer_list<const char*> names);
 
 	void setReconnectBackoffMs(uint32_t ms);
 	void setReconnectAttemptMs(uint32_t ms);
 	void setExternalApActive(bool active);
 	bool isExternalApActive() const;
     bool startMDNS(const String& host);
-    void stopMDNS();
     bool mdnsStarted = false;
-    String mdnsHost;
 
     void setComfoAir(ComfoAirDriver* drv) { comfo = drv; } // NEU
 
@@ -99,9 +86,6 @@ private:
 	void handleComfoDoc(AsyncWebServerRequest* request);   // NEU
 	void handleLogPage(AsyncWebServerRequest* request);    // NEU
 	void handleLogs(AsyncWebServerRequest* request);       // NEU
-	void handleComfoState(AsyncWebServerRequest* request); // NEU
-	void handleComfoSetLevel(AsyncWebServerRequest* request); // NEU
-	void handleComfoSetComfort(AsyncWebServerRequest* request); // NEU
 	void handleSave(AsyncWebServerRequest* request);
 	void handleScan(AsyncWebServerRequest* request);
 	void handleNotFound(AsyncWebServerRequest* request);
@@ -111,22 +95,8 @@ private:
 	void handleComfoSettingsDoc(AsyncWebServerRequest* request); // NEU
 	void handleMqttSettingsDoc(AsyncWebServerRequest* request);      // NEU
 
-	void handleComfoTestStart(AsyncWebServerRequest* request);
-	void handleComfoTestFlaps(AsyncWebServerRequest* request);
-	void handleComfoTestEnd(AsyncWebServerRequest* request);
-	void handleComfoTestAnalog(AsyncWebServerRequest* request);      // ggf. schon da
-	void handleComfoTestConfigGet(AsyncWebServerRequest* request);   // NEU
-	void handleComfoTestConfigSave(AsyncWebServerRequest* request);  // NEU
-
-	void handleMqttConfigGet(AsyncWebServerRequest* request);        // NEU
-	void handleMqttConfigSave(AsyncWebServerRequest* request);       // NEU
-	void handleSysInfo(AsyncWebServerRequest* request);              // NEU
-
 	void loadCredentials();
-	void saveCredentials(String ssid, String password);
 	void eraseCredentials();
-	bool isProtectedJson(const String& name) const;
-	void eraseJsonInDir(const char* path);
 
 	void ledAutoUpdate();
 	void ledTask();
@@ -138,6 +108,7 @@ private:
 	AsyncWebServer apServer{ 80 };
 	DNSServer dns;
 	bool portalActive = false;
+	bool routesReady = false;
 	bool dnsRunning = false;
 
 	IPAddress apIP{ 192,168,4,1 }, apGW{ 192,168,4,1 }, apSN{ 255,255,255,0 };
@@ -156,18 +127,10 @@ private:
 	bool allowButtonPortal = true;
 	uint8_t  maxFailRetries = 3;
 	uint32_t failWindowMs = 60000;
-	uint8_t  failCount = 0;
-	unsigned long failWindowStart = 0;
 
 	bool connected = false;
 	bool autoReconnect = true;
-	unsigned long ultimoIntentoWiFi = 0;
 
-	unsigned long ultimoScan = 0;
-	static constexpr unsigned long SCAN_INTERVAL_MS = 15000;
-	static constexpr unsigned long SCAN_CACHE_MS = 1500;
-	String lastScanJson;
-	unsigned long lastScanAt = 0;
 	bool scanning = false;
 	unsigned long scanningUntil = 0;
 
@@ -178,8 +141,6 @@ private:
 	uint8_t     ledOut = LOW;
 	uint8_t     ledStep = 0;
 	unsigned long ledT0 = 0;
-
-	std::vector<String> _protectedExact;
 
 	uint32_t reconnectBackoffMs = 10000;
 	uint32_t reconnectAttemptMs = 5000;

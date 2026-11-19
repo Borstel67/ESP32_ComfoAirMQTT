@@ -14,12 +14,11 @@
 #include <time.h>
 #include <WiFi.h> // nur ESP32
 #include <ArduinoOTA.h>
-#include <esp_partition.h>
-#include <esp_ota_ops.h>
 #include <Preferences.h>
+#include <esp_ota_ops.h>
+#include <mutex>
 
 // Exakte Whitelist-Einträge für geschützte JSON-Dateien
-static std::vector<String> _protectedExact;
 static bool     _otaStarted = false;
 static uint16_t _otaPort    = 3232;
 
@@ -50,6 +49,23 @@ void eraseConfigJson() {
 		p.remove(kNvsKey);
 		p.end();
 	}
+}
+
+bool updateConfigJson(const std::function<void(JsonDocument&)>& mutate) {
+	static std::mutex mtx;
+	std::lock_guard<std::mutex> lock(mtx);
+
+	String json;
+	DynamicJsonDocument doc(2048);
+	const bool had = loadConfigJson(json);
+	if (had && deserializeJson(doc, json)) doc.clear();
+
+	mutate(doc);
+
+	String out;
+	serializeJson(doc, out);
+	if (had && out == json) return true; // unverändert -> kein NVS-Schreibzugriff
+	return saveConfigJson(out);
 }
 
 // Wandelt "a.b.c.d" nach IPAddress; false bei ungültigem Format
@@ -102,71 +118,10 @@ void loadCredentials(String& ssid, String& password) {
 	password = doc["password"].as<String>();
 }
 
-// Schreibt SSID/PW nach /config.json; preserves andere Keys falls vorhanden
-void saveCredentials(const String& ssid, const String& password) {
-	// Schreibt SSID und Passwort in config.json; erhält andere Keys.
-	StaticJsonDocument<320> doc;
-	String json;
-	if (loadConfigJson(json)) deserializeJson(doc, json);
-	doc["ssid"] = ssid;
-	doc["password"] = password;
-
-	String out;
-	serializeJson(doc, out);
-	saveConfigJson(out);
-}
-
 // Löscht alle nicht-geschützten JSON-Dateien im Root
 void eraseCredentials() {
 	// Löscht die gesamte config.json aus dem NVS (Neustart erforderlich).
 	eraseConfigJson();
-}
-
-// Setzt Whitelist-Einträge für geschützte .json (mit führendem '/')
-void setProtectedJsons(std::initializer_list<const char*> names) {
-	// Setzt die Whitelist der geschützten JSON-Dateien (mit führendem '/').
-	_protectedExact.clear();
-	for (auto n : names) {
-		String s(n ? n : "");
-		if (!s.length()) continue;
-		if (!s.startsWith("/")) s = "/" + s;
-		_protectedExact.push_back(s);
-	}
-}
-
-// Prüft, ob ein Name in der Whitelist liegt (Case-insensitive)
-bool isProtectedJson(const String& name) {
-	// Prüft ob name in der Whitelist liegt (Case-insensitive, mit '/' normalisiert).
-	String n = name;
-	if (!n.startsWith("/")) n = "/" + n;
-	for (const auto& ex : _protectedExact) {
-		if (n.equalsIgnoreCase(ex)) return true;
-	}
-	return false;
-}
-
-// Rekursives Löschen von .json unterhalb dirPath (ESP32)
-void eraseJsonInDir(const char* dirPath) {
-	// Löscht alle .json-Dateien unterhalb von dirPath rekursiv,
-	// außer den in der Whitelist geschützten.
-	if (!dirPath || !*dirPath) return;
-	File dir = LittleFS.open(dirPath);
-	if (!dir || !dir.isDirectory()) return;
-	String base = dirPath;
-	if (!base.endsWith("/")) base += "/";
-	for (File f = dir.openNextFile(); f; f = dir.openNextFile()) {
-		String name = f.name();
-		String full = name;
-		if (!full.startsWith("/")) full = base + full;
-		const bool isDir = f.isDirectory();
-		f.close();
-		if (isDir) {
-			eraseJsonInDir(full.c_str());
-		} else if (full.endsWith(".json") && !isProtectedJson(full)) {
-			LittleFS.remove(full);
-		}
-	}
-	dir.close();
 }
 
 // NTP-Sync mit bis zu 'tries' Versuchen; Server optional aus /config.json
@@ -220,58 +175,11 @@ void ensureArduinoOta(const String& hostname, uint16_t port, const String& passw
 	Serial.printf("[OTA] Bereit unter %s:%u\n", host.c_str(), static_cast<unsigned>(_otaPort));
 }
 
+bool isArduinoOtaStarted() { return _otaStarted; }
+
 void handleArduinoOta() {
 	// Muss in loop() aufgerufen werden, damit OTA-Updates verarbeitet werden.
 	if (_otaStarted) ArduinoOTA.handle();
-}
-
-// Partition-Check: ≥2 OTA-App-Slots und ≥1 DATA-(SPIFFS/FFat/LittleFS)
-bool checkOtaAndDataPartitions(bool logDetails) {
-	// Prüft ob mindestens 2 OTA-App-Slots und 1 Dateisystem-Partition vorhanden sind.
-	// logDetails=true gibt alle Partitionen auf Serial aus.
-	size_t otaCount = 0;
-	size_t dataFsCount = 0;
-
-	const esp_partition_t* running = esp_ota_get_running_partition();
-	const esp_partition_t* boot    = esp_ota_get_boot_partition();
-
-	// APP-Partitionen
-	esp_partition_iterator_t it = esp_partition_find(ESP_PARTITION_TYPE_APP, ESP_PARTITION_SUBTYPE_ANY, nullptr);
-	while (it) {
-		const esp_partition_t* p = esp_partition_get(it);
-		const bool isOta = p->subtype >= ESP_PARTITION_SUBTYPE_APP_OTA_MIN && p->subtype <= ESP_PARTITION_SUBTYPE_APP_OTA_MAX;
-		if (isOta) otaCount++;
-		if (logDetails) {
-			Serial.printf("[PART] APP  %-12s type=0x%02x sub=0x%02x size=%.1fk @0x%06x %s%s\n",
-				p->label, p->type, p->subtype, p->size / 1024.0f, p->address,
-				(p == running ? "(running) " : ""), (p == boot ? "(boot)" : ""));
-		}
-		it = esp_partition_next(it);
-	}
-	esp_partition_iterator_release(it);
-
-	// DATA-Partitionen (SPIFFS/FFat/LittleFS)
-	it = esp_partition_find(ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_ANY, nullptr);
-	while (it) {
-		const esp_partition_t* p = esp_partition_get(it);
-		const bool isFsSubtype = (p->subtype == ESP_PARTITION_SUBTYPE_DATA_SPIFFS) || (p->subtype == ESP_PARTITION_SUBTYPE_DATA_FAT);
-		const bool isFsLabel   = String(p->label).startsWith("spiffs") || String(p->label).startsWith("littlefs") || String(p->label).startsWith("ffat");
-		const bool isFs = isFsSubtype || isFsLabel;
-		if (isFs) dataFsCount++;
-		if (logDetails) {
-			Serial.printf("[PART] DATA %-12s type=0x%02x sub=0x%02x size=%.1fk @0x%06x %s\n",
-				p->label, p->type, p->subtype, p->size / 1024.0f, p->address, isFs ? "(FS)" : "");
-		}
-		it = esp_partition_next(it);
-	}
-	esp_partition_iterator_release(it);
-
-	const bool ok = (otaCount >= 2) && (dataFsCount >= 1);
-	if (logDetails) {
-		Serial.printf("[PART] OTA-Slots=%u, DATA-FS=%u => %s\n",
-			(unsigned)otaCount, (unsigned)dataFsCount, ok ? "OK" : "NICHT OK");
-	}
-	return ok;
 }
 
 // AsyncWebServer-Variante
@@ -344,18 +252,12 @@ bool saveManualUiCfg(const ManualUiCfg& cfgIn) {
     cfg.exhaust = clampInt(cfg.exhaust, 0, 100);
     cfg.postheater = clampInt(cfg.postheater, 0, 100);
 
-    String json;
-    StaticJsonDocument<1024> doc;
-    if (loadConfigJson(json)) deserializeJson(doc, json);
-
-    doc["testAutoStopSec"] = cfg.delaySeconds;
-    doc["manualAnalogSupply"] = cfg.supply;
-    doc["manualAnalogExhaust"] = cfg.exhaust;
-    doc["manualAnalogPostheater"] = cfg.postheater;
-
-    String out;
-    serializeJson(doc, out);
-    return saveConfigJson(out);
+    return updateConfigJson([&](JsonDocument& doc) {
+        doc["testAutoStopSec"] = cfg.delaySeconds;
+        doc["manualAnalogSupply"] = cfg.supply;
+        doc["manualAnalogExhaust"] = cfg.exhaust;
+        doc["manualAnalogPostheater"] = cfg.postheater;
+    });
 }
 
 int loadTestAutoStopSec() {
@@ -368,4 +270,102 @@ bool saveTestAutoStopSec(int sec) {
     loadManualUiCfg(cfg);
     cfg.delaySeconds = sec;
     return saveManualUiCfg(cfg);
+}
+
+bool loadMqttCfg(MqttCfg& c) {
+    String json;
+    if (!loadConfigJson(json)) return true; // Defaults
+
+    DynamicJsonDocument doc(2048);
+    if (deserializeJson(doc, json)) return false;
+
+    c.enabled     = doc["mqttEnabled"] | c.enabled;
+    c.host        = doc["mqttHost"] | c.host.c_str();
+    c.port        = doc["mqttPort"] | c.port;
+    c.user        = doc["mqttUser"] | c.user.c_str();
+    c.pass        = doc["mqttPass"] | c.pass.c_str();
+    c.clientId    = doc["mqttClientId"] | c.clientId.c_str();
+    c.topicPrefix = doc["mqttTopicPrefix"] | c.topicPrefix.c_str();
+    return true;
+}
+
+bool saveMqttCfg(const MqttCfg& c) {
+    return updateConfigJson([&](JsonDocument& doc) {
+        doc["mqttEnabled"]     = c.enabled;
+        doc["mqttHost"]        = c.host;
+        doc["mqttPort"]        = c.port;
+        doc["mqttUser"]        = c.user;
+        doc["mqttPass"]        = c.pass;
+        doc["mqttClientId"]    = c.clientId;
+        doc["mqttTopicPrefix"] = c.topicPrefix;
+    });
+}
+
+String normalizeTopicPrefix(String p) {
+    p.trim();
+    while (p.startsWith("/")) p.remove(0, 1);
+    while (p.endsWith("/")) p.remove(p.length() - 1, 1);
+    if (p.isEmpty()) p = "comfoair";
+    return p;
+}
+
+bool toBoolArg(const String& s) {
+    String v = s;
+    v.toLowerCase();
+    return v == "1" || v == "true" || v == "on" || v == "yes";
+}
+
+// ── OTA-Rollback ──────────────────────────────────────────────────────────────
+// Überschreibt den schwachen Hook des Arduino-Cores: Der Core bestätigt eine neue
+// Firmware sonst sofort beim Start; so bleibt sie unbestätigt, bis otaRollbackService()
+// sie als funktionsfähig erkannt hat.
+extern "C" bool verifyRollbackLater() { return true; }
+
+namespace {
+    enum class OtaVerify : uint8_t { UNKNOWN, PENDING, DONE };
+    OtaVerify s_otaVerify = OtaVerify::UNKNOWN;
+    uint32_t  s_otaHealthySince = 0;
+    bool      s_otaWasHealthy = false;
+}
+
+bool otaRollbackPending() {
+    if (s_otaVerify == OtaVerify::UNKNOWN) {
+        esp_ota_img_states_t st;
+        const esp_partition_t* running = esp_ota_get_running_partition();
+        const bool pending = running && esp_ota_get_state_partition(running, &st) == ESP_OK
+                          && st == ESP_OTA_IMG_PENDING_VERIFY;
+        s_otaVerify = pending ? OtaVerify::PENDING : OtaVerify::DONE;
+        if (pending) {
+            Serial.printf("[OTA] Neue Firmware auf Probe: Bestaetigung nach %lu s stabilem Betrieb, "
+                          "sonst Rollback nach %lu s\n",
+                          (unsigned long)(OTA_CONFIRM_STABLE_MS / 1000), (unsigned long)(OTA_ROLLBACK_TIMEOUT_MS / 1000));
+        }
+    }
+    return s_otaVerify == OtaVerify::PENDING;
+}
+
+void otaRollbackService(bool healthy) {
+    if (!otaRollbackPending()) return;
+    const uint32_t now = millis();
+
+    if (healthy) {
+        if (!s_otaWasHealthy) { s_otaWasHealthy = true; s_otaHealthySince = now; }
+        if (now - s_otaHealthySince >= OTA_CONFIRM_STABLE_MS) {
+            const esp_err_t err = esp_ota_mark_app_valid_cancel_rollback();
+            s_otaVerify = OtaVerify::DONE;
+            Serial.printf("[OTA] Neue Firmware bestaetigt (%s)\n", err == ESP_OK ? "ok" : esp_err_to_name(err));
+            return;
+        }
+    } else {
+        s_otaWasHealthy = false;
+    }
+
+    if (now >= OTA_ROLLBACK_TIMEOUT_MS) {
+        Serial.println("[OTA] Neue Firmware nicht funktionsfaehig -> Rollback auf vorherige Version");
+        Serial.flush();
+        // Kehrt bei Erfolg nicht zurück (Neustart in die vorherige Firmware).
+        const esp_err_t err = esp_ota_mark_app_invalid_rollback_and_reboot();
+        Serial.printf("[OTA] Rollback nicht moeglich (%s) - Firmware bleibt aktiv\n", esp_err_to_name(err));
+        s_otaVerify = OtaVerify::DONE;
+    }
 }

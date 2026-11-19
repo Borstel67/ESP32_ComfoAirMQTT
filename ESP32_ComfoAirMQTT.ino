@@ -1,10 +1,31 @@
 // SPDX-License-Identifier: MIT
-// Haupt-Sketch für ComfoAirMQTTESP:
+// Haupt-Sketch für ESP32_ComfoAirMQTT:
 // - Verbindet ESP32 mit WiFi (AP-Provisioning / STA)
 // - Bedient den ComfoAir 350 RS232-Treiber
 // - Veröffentlicht Gerätestatus über MQTT
 // - Stellt HTTP-Webinterface und OTA-Update bereit
+// Core 3.x: Network/NetworkClient/WiFi explizit einbinden, damit Visual Micro
+// die Core-Bibliothek "Network" beim Library-Scan findet.
+#include <Network.h>
+#include <NetworkClient.h>
+#include <NetworkClientSecure.h>
+#include <WiFi.h>
 #include <HTTPClient.h>
+// Externe Bibliotheken, die nur in src/*.h benutzt werden: hier einbinden,
+// damit Visual Micro sie beim Library-Scan findet.
+#include <PubSubClient.h>
+#include <AsyncTCP.h>
+#include <ESPAsyncWebServer.h>
+#include <FS.h>
+#include <Update.h>
+#include <ArduinoOTA.h>
+#include <SHA1Builder.h>
+#include <AsyncUDP.h>
+#include <ElegantOTA.h>
+#include <DNSServer.h>
+#include <ESPmDNS.h>
+#include <Preferences.h>
+#include <LittleFS.h>
 #define AWM_LOG_TAG "MAIN"
 
 #include <Arduino.h>
@@ -70,32 +91,6 @@ const char* MQTT_USER      = "";
 const char* MQTT_PASS      = "";
 const char* MQTT_CLIENT_ID = "ComfoAirESP32";
 
-// Laufzeitwerte aus config.json (überschreiben die Defaults oben)
-static bool   gMqttEnabled     = true;
-static String gMqttHost        = MQTT_HOST;
-static int    gMqttPort        = MQTT_PORT;
-static String gMqttUser        = MQTT_USER;
-static String gMqttPass        = MQTT_PASS;
-static String gMqttClientId    = MQTT_CLIENT_ID;
-static String gMqttTopicPrefix = "comfoair";
-
-// Liest MQTT-Konfiguration aus config.json und überschreibt die Laufzeitwerte.
-static void loadMqttConfigFromJson() {
-    String json;
-    if (!loadConfigJson(json)) return;
-
-    StaticJsonDocument<1024> doc;
-    if (deserializeJson(doc, json)) return;
-
-    gMqttEnabled     = doc["mqttEnabled"]     | gMqttEnabled;
-    gMqttHost        = doc["mqttHost"]        | gMqttHost.c_str();
-    gMqttPort        = doc["mqttPort"]        | gMqttPort;
-    gMqttUser        = doc["mqttUser"]        | gMqttUser.c_str();
-    gMqttPass        = doc["mqttPass"]        | gMqttPass.c_str();
-    gMqttClientId    = doc["mqttClientId"]    | gMqttClientId.c_str();
-    gMqttTopicPrefix = doc["mqttTopicPrefix"] | gMqttTopicPrefix.c_str();
-}
-
 // TCP-Client-Instanz für den MQTT-Broker.
 WiFiClient mqttNet;
 
@@ -108,7 +103,23 @@ static String currentOtaHostname() {
 
 // Initialisiert ArduinoOTA falls noch nicht aktiv.
 static void ensureOtaReady() {
+    if (isArduinoOtaStarted()) return; // häufigster Fall: nichts zu tun, keine String-Allokation
     ensureArduinoOta(currentOtaHostname(), OTA_PORT, "");
+}
+
+// Prüft (1x pro Sekunde), ob eine per OTA eingespielte Firmware funktioniert, und
+// bestätigt sie bzw. löst den Rollback aus. "Funktioniert" heißt: per WLAN erreichbar
+// und Webserver läuft - also ein weiteres OTA möglich. Ohne gespeicherte Zugangsdaten
+// zählt das offene Portal.
+static void serviceOtaRollback() {
+    if (!otaRollbackPending()) return;
+    static uint32_t last = 0;
+    if (millis() - last < 1000) return;
+    last = millis();
+
+    const bool healthy = (wifiManagerAP.isConnected() && wifiManagerSTA.isRunning())
+                      || (portalActive && !wifiManagerAP.tieneCredenciales());
+    otaRollbackService(healthy);
 }
 
 // Setzt das Sketch-LED-Muster und den GPIO-Ausgang.
@@ -222,19 +233,22 @@ void setup() {
     // RS232-TTL zur ComfoAir initialisieren (9600 Baud, 8N1).
     comfoAir.begin(9600, COMFO_RX_PIN, COMFO_TX_PIN);
 
-    // MQTT-Konfiguration aus config.json laden und anwenden.
-    loadMqttConfigFromJson();
+    // MQTT-Konfiguration: Defaults von oben, überschrieben durch config.json.
+    MqttCfg mq;
+    mq.host     = MQTT_HOST;
+    mq.port     = MQTT_PORT;
+    mq.user     = MQTT_USER;
+    mq.pass     = MQTT_PASS;
+    mq.clientId = MQTT_CLIENT_ID;
+    loadMqttCfg(mq);
 
-    ComfoMqttConfig cfg{
-        gMqttHost.c_str(),
-        gMqttPort,
-        gMqttUser.c_str(),
-        gMqttPass.c_str(),
-        gMqttClientId.c_str(),
-        gMqttTopicPrefix.c_str()
+    // mqttInit() kopiert die Strings, 'mq' darf danach verworfen werden.
+    const ComfoMqttConfig cfg{
+        mq.host.c_str(), mq.port, mq.user.c_str(), mq.pass.c_str(),
+        mq.clientId.c_str(), mq.topicPrefix.c_str()
     };
     comfoAir.mqttInit(mqttNet, cfg);
-    comfoAir.mqttSetEnabled(gMqttEnabled);
+    comfoAir.mqttSetEnabled(mq.enabled);
 
     // WiFi-Verbindung herstellen oder Portal öffnen.
     connectWiFiSTAOrWiFiAP(8000);
@@ -250,6 +264,9 @@ void loop() {
 
     // ArduinoOTA-Updates verarbeiten.
     handleArduinoOta();
+
+    // Neue OTA-Firmware bestätigen oder zurückrollen.
+    serviceOtaRollback();
 
     // Sketch-eigene LED aktualisieren.
     updateLed();

@@ -23,4 +23,9 @@ namespace ComfoHttpApi {
 
     void mqttConfigGet(AsyncWebServerRequest* request);
     void mqttConfigSave(AsyncWebServerRequest* request, ComfoAirDriver* comfo);
+
+    // Registriert alle /api/comfo/*- und /api/mqtt/config-Routen auf 'server'.
+    // 'comfo' wird als Referenz gehalten: der Zeiger darf auch später gesetzt werden,
+    // muss aber so lange leben wie der Server.
+    void registerRoutes(AsyncWebServer& server, ComfoAirDriver*& comfo);
 }

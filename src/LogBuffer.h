@@ -5,11 +5,8 @@
 #pragma once
 #include <Arduino.h>
 
-// Hängt eine fertige Zeichenkette an den Ring-Puffer an.
-void awm_logbuf_append(const char* msg);
-
-// Formatiert printf-artig und hängt das Ergebnis an den Ring-Puffer an.
-void awm_logbuf_appendf(const char* fmt, ...);
+// Formatiert einmal und schreibt das Ergebnis auf Serial und in den Ring-Puffer.
+void awm_logf(const char* fmt, ...);
 
 // Leert den Ring-Puffer.
 void awm_logbuf_clear();

@@ -11,7 +11,7 @@
           - "comfoair_mqtt_device"
         name: "MQTT"
         manufacturer: "Borstel67"
-        model: "ComfoAirMQTTESP"
+        model: "ESP32_ComfoAirMQTT"
 
     - name: "Zuluft"
       default_entity_id: sensor.comfoair_supply_percent
